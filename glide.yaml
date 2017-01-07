@@ -1,0 +1,24 @@
+package: github.com/flachnetz/dd-zipkin
+import:
+- package: github.com/DataDog/dd-trace-go
+  version: ~0.1.0
+  subpackages:
+  - tracer
+- package: github.com/apache/thrift
+  version: ~0.9.3
+  subpackages:
+  - lib/go/thrift
+- package: github.com/openzipkin/zipkin-go-opentracing
+  version: 0.2.2
+- package: github.com/julienschmidt/httprouter
+  version: ~1.1.0
+- package: github.com/gorilla/handlers
+  version: ~1.1.0
+- package: github.com/jessevdk/go-flags
+  version: ~1.1.0
+- package: github.com/Sirupsen/logrus
+  version: ~0.11.0
+- package: github.com/opentracing/opentracing-go
+  version: 137bfcefd3340b28186f4fd3608719fcb120f98f
+- package: github.com/flachnetz/go-admin
+  version: ~1.4.0
