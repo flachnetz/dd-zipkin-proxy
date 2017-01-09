@@ -122,10 +122,24 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 	}
 
 	// try to get the service from the cs/cr or sr/ss annotations
+	var minTimestamp, maxTimestamp int64
 	for _, an := range span.Annotations {
 		if an.Host != nil && an.Host.ServiceName != "" {
 			converted.Service = an.Host.ServiceName
 		}
+
+		if an.Timestamp < minTimestamp || minTimestamp == 0 {
+			minTimestamp = an.Timestamp
+		}
+
+		if an.Timestamp > maxTimestamp {
+			maxTimestamp = an.Timestamp
+		}
+	}
+
+	if converted.Start == 0 {
+		converted.Start = 1000 * minTimestamp
+		converted.Duration = 1000 * (maxTimestamp - minTimestamp)
 	}
 
 	// simplify some names
@@ -148,6 +162,20 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		}
 	}
 
+	if converted.Service == "core-services" {
+
+		if strings.Contains(converted.Meta["http.url"], ":6080/") {
+			converted.Service = "iwg-restrictor"
+			converted.Name = getNameFromResource(converted.Resource, converted.Name)
+		}
+
+		if strings.Contains(converted.Meta["http.url"], ":2080/") {
+			converted.Service = "iwg-game"
+			converted.Name = "iwg"
+		}
+
+	}
+
 	// If we could not get a service, we'll try to get it from the parent span.
 	// Try first in the current map, then in the previous one.
 	if converted.Service == "" {
@@ -168,6 +196,10 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		}
 	}
 
+	if converted.Name == "" && converted.Meta["lc"] != "" {
+		converted.Name = converted.Meta["lc"]
+	}
+
 	// guess a type for the datadog ui.
 	if converted.Name == "transaction" || converted.Service == "redis" {
 		converted.Type = "db"
@@ -180,7 +212,7 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 	}
 
 	if converted.Name == "" {
-		logrus.Warnf("Could not get a name for this span: %+v", span)
+		logrus.Warnf("Could not get a name for this span: %+v converted: %+v", span, converted)
 	}
 
 	// initialize history maps for span -> parent assignment
@@ -193,4 +225,14 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 	converter.current[converted.SpanID] = converted.Service
 
 	return converted
+}
+
+func getNameFromResource(resource string, fallback string) string {
+	splittedUrl := strings.Split(strings.Trim(resource, "/"), "/")
+	if len(splittedUrl) == 1 && splittedUrl[0] != "" {
+		return splittedUrl[0]
+	} else if len(splittedUrl) > 1 {
+		return splittedUrl[len(splittedUrl)-2] + "/" + splittedUrl[len(splittedUrl)-1]
+	}
+	return fallback
 }
