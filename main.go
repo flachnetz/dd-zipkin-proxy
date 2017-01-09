@@ -19,7 +19,9 @@ import (
 	"github.com/openzipkin/zipkin-go-opentracing"
 	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
 
+	"encoding/json"
 	. "github.com/flachnetz/go-admin"
+	"sync"
 )
 
 var log = logrus.WithField("prefix", "main")
@@ -67,6 +69,15 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 		channels = append(channels, zipkinSpans)
 	}
 
+	// a channel to store the last spans that were received
+	var buffer *SpansBuffer
+	{
+		zipkinSpans := make(chan *zipkincore.Span, 512)
+		buffer = NewSpansBuffer(2048)
+		go buffer.ReadFrom(zipkinSpans)
+		channels = append(channels, zipkinSpans)
+	}
+
 	// multiplex channels
 	zipkinSpans := make(chan *zipkincore.Span, 16)
 	go forwardSpansToChannels(zipkinSpans, channels)
@@ -75,7 +86,10 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 		WithDefaults(),
 		WithForceGC(),
 		WithPProfHandlers(),
-		WithHeapDump())
+		WithHeapDump(),
+
+		Describe("A buffer of the previous traces (in openzipkin-format) in the order they were received.",
+			WithGenericValue("/spans", buffer.ToSlice)))
 
 	// listen for zipkin messages
 	router := httprouter.New()
@@ -134,37 +148,55 @@ func handleSpans(spans chan<- *zipkincore.Span) httprouter.Handle {
 			return
 		}
 
-		transport := thrift.NewStreamTransportR(bytes.NewReader(body))
-		protocol := thrift.NewTBinaryProtocolTransport(transport)
+		// parse with correct mime type
+		if req.Header.Get("Content-Type") == "application/json" {
+			err = parseSpansWithJSON(spans, body)
+		} else {
+			err = parseSpansWithThrift(spans, body)
+		}
 
-		_, size, err := protocol.ReadListBegin()
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+		} else {
+			w.WriteHeader(http.StatusNoContent)
 		}
-
-		for idx := 0; idx < size; idx++ {
-			var span zipkincore.Span
-
-			if err := span.Read(protocol); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-
-			if span.Name == "watch-config-key-values" {
-				continue
-			}
-
-			spans <- &span
-		}
-
-		if err := protocol.ReadListEnd(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+func parseSpansWithJSON(spans chan<- *zipkincore.Span, body []byte) error {
+	parsedSpans := []zipkincore.Span{}
+
+	if err := json.Unmarshal(body, &parsedSpans); err != nil {
+		return err
+	}
+
+	for idx := range parsedSpans {
+		spans <- &parsedSpans[idx]
+	}
+
+	return nil
+}
+
+func parseSpansWithThrift(spans chan<- *zipkincore.Span, body []byte) error {
+	transport := thrift.NewStreamTransportR(bytes.NewReader(body))
+	protocol := thrift.NewTBinaryProtocolTransport(transport)
+
+	_, size, err := protocol.ReadListBegin()
+	if err != nil {
+		return err
+	}
+
+	for idx := 0; idx < size; idx++ {
+		var span zipkincore.Span
+
+		if err := span.Read(protocol); err != nil {
+			return err
+		}
+
+		spans <- &span
+	}
+
+	return protocol.ReadListEnd()
 }
 
 type funcLogger func(keyvals ...interface{})
@@ -172,4 +204,38 @@ type funcLogger func(keyvals ...interface{})
 func (fn funcLogger) Log(keyvals ...interface{}) error {
 	fn(keyvals...)
 	return nil
+}
+
+type SpansBuffer struct {
+	lock     sync.Mutex
+	position uint
+	spans    []*zipkincore.Span
+}
+
+func NewSpansBuffer(capacity uint) *SpansBuffer {
+	spans := make([]*zipkincore.Span, capacity)
+	return &SpansBuffer{spans: spans}
+}
+
+func (buffer *SpansBuffer) ReadFrom(spans <-chan *zipkincore.Span) {
+	for span := range spans {
+		buffer.lock.Lock()
+		buffer.spans[buffer.position] = span
+		buffer.position = (buffer.position + 1) % uint(len(buffer.spans))
+		buffer.lock.Unlock()
+	}
+}
+
+func (buffer *SpansBuffer) ToSlice() []*zipkincore.Span {
+	buffer.lock.Lock()
+	defer buffer.lock.Unlock()
+
+	var result []*zipkincore.Span
+	for _, span := range buffer.spans {
+		if span != nil {
+			result = append(result, span)
+		}
+	}
+
+	return result
 }
