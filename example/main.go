@@ -163,17 +163,17 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 	}
 
 	if converted.Service == "core-services" {
-
 		if strings.Contains(converted.Meta["http.url"], ":6080/") {
 			converted.Service = "iwg-restrictor"
-			converted.Name = getNameFromResource(converted.Resource, converted.Name)
+			converted.Name = iwgNameFromResource(converted.Resource, converted.Name)
+			converted.Resource = dropDomainFromUrl(converted.Resource)
 		}
 
 		if strings.Contains(converted.Meta["http.url"], ":2080/") {
 			converted.Service = "iwg-game"
 			converted.Name = "iwg"
+			converted.Resource = dropDomainFromUrl(converted.Resource)
 		}
-
 	}
 
 	// If we could not get a service, we'll try to get it from the parent span.
@@ -227,7 +227,21 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 	return converted
 }
 
-func getNameFromResource(resource string, fallback string) string {
+func dropDomainFromUrl(url string) string {
+	switch {
+	case strings.HasPrefix(url, "http://"):
+		index := strings.IndexRune(url[7:], '/')
+		return url[7+index:]
+
+	case strings.HasPrefix(url, "https://"):
+		index := strings.IndexRune(url[8:], '/')
+		return url[8+index:]
+	}
+
+	return url
+}
+
+func iwgNameFromResource(resource string, fallback string) string {
 	splittedUrl := strings.Split(strings.Trim(resource, "/"), "/")
 	if len(splittedUrl) == 1 && splittedUrl[0] != "" {
 		return splittedUrl[0]
