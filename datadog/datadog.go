@@ -42,6 +42,9 @@ func submitTraces(transport tracer.Transport, spansByTrace <-chan map[uint64][]*
 			if _, err := transport.Send(traces); err != nil {
 				log.WithError(err).Warn("Error reporting spans to datadog")
 			}
+
+			//val, _ := json.MarshalIndent(traces, "", "  ")
+			//log.Info(string(val))
 		}
 	}
 }

@@ -82,6 +82,10 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	zipkinSpans := make(chan *zipkincore.Span, 16)
 	go forwardSpansToChannels(zipkinSpans, channels)
 
+	// do error correction for spans
+	originalZipkinSpans := make(chan *zipkincore.Span, 1024)
+	go ErrorCorrectSpans(originalZipkinSpans, zipkinSpans)
+
 	admin := NewAdminHandler("/admin", "dd-zipkin-proxy",
 		WithDefaults(),
 		WithForceGC(),
@@ -94,7 +98,7 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	// listen for zipkin messages
 	router := httprouter.New()
 	registerAdminHandler(router, admin)
-	router.POST("/api/v1/spans", handleSpans(zipkinSpans))
+	router.POST("/api/v1/spans", handleSpans(originalZipkinSpans))
 	log.Fatal(http.ListenAndServe(opts.ListenAddr, handlers.LoggingHandler(log.Logger.Writer(), router)))
 }
 
@@ -115,11 +119,13 @@ func forwardSpansToChannels(source <-chan *zipkincore.Span, targets []chan<- *zi
 	for span := range source {
 		for _, target := range targets {
 			// send span, do not block if target is full
-			select {
-			case target <- span:
-			default:
-				dropped += 1
-			}
+			//select {
+			//case target <- span:
+			//default:
+			//	dropped += 1
+			//}
+
+			target <- span
 		}
 
 		if dropped > 0 && time.Now().Sub(lastLogMessageTime) > 1*time.Second {
