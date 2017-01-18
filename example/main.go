@@ -57,6 +57,10 @@ type DefaultSpanConverter struct {
 }
 
 func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Span {
+	if span.Name == "watch-config-key-values" {
+		return nil
+	}
+
 	name := SimplifyResourceName(span.Name)
 
 	converted := &tracer.Span{
@@ -125,7 +129,9 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 	var minTimestamp, maxTimestamp int64
 	for _, an := range span.Annotations {
 		if an.Host != nil && an.Host.ServiceName != "" {
-			converted.Service = an.Host.ServiceName
+			if an.Value == "sr" {
+				converted.Service = an.Host.ServiceName
+			}
 		}
 
 		if an.Timestamp < minTimestamp || minTimestamp == 0 {
@@ -151,6 +157,12 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		converted.Service = "oracle"
 	}
 
+	if sql := converted.Meta["sql"]; sql != "" {
+		delete(converted.Meta, "sql")
+		converted.Service = "sql"
+		converted.Resource = sql
+	}
+
 	if strings.HasPrefix(converted.Name, "redis:") {
 		converted.Service = "redis"
 
@@ -170,8 +182,8 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		}
 
 		if strings.Contains(converted.Meta["http.url"], ":2080/") {
-			converted.Service = "iwg-game"
-			converted.Name = "iwg"
+			converted.Service = "instant-win-game"
+			converted.Name = "iwg-game"
 			converted.Resource = dropDomainFromUrl(converted.Resource)
 		}
 	}
@@ -196,8 +208,16 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		}
 	}
 
-	if converted.Name == "" && converted.Meta["lc"] != "" {
-		converted.Name = converted.Meta["lc"]
+	if lc := converted.Meta["lc"]; lc != "" {
+		delete(converted.Meta, "lc")
+
+		if converted.Name == "" {
+			converted.Name = converted.Meta["lc"]
+		}
+
+		if lc == "consul" {
+			converted.Service = "consul"
+		}
 	}
 
 	// guess a type for the datadog ui.

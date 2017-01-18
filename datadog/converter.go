@@ -16,7 +16,10 @@ func ConvertZipkinSpans(zipkinSpans <-chan *zipkincore.Span, converter SpanConve
 		defer close(datadogSpans)
 
 		for span := range zipkinSpans {
-			datadogSpans <- converter(span)
+			converted := converter(span)
+			if converted != nil {
+				datadogSpans <- converted
+			}
 		}
 	}()
 

@@ -5,6 +5,7 @@ import (
 	"time"
 	"unsafe"
 
+	"encoding/json"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/Sirupsen/logrus"
 )
@@ -39,12 +40,14 @@ func submitTraces(transport tracer.Transport, spansByTrace <-chan map[uint64][]*
 		if len(traces) > 0 {
 			log.Debugf("Sending %d spans in traces %d traces", count, len(traces))
 
-			if _, err := transport.Send(traces); err != nil {
-				log.WithError(err).Warn("Error reporting spans to datadog")
+			if true {
+				if _, err := transport.Send(traces); err != nil {
+					log.WithError(err).Warn("Error reporting spans to datadog")
+				}
+			} else {
+				val, _ := json.MarshalIndent(traces, "", "  ")
+				log.Info(string(val))
 			}
-
-			//val, _ := json.MarshalIndent(traces, "", "  ")
-			//log.Info(string(val))
 		}
 	}
 }
