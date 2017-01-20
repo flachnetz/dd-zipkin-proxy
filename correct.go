@@ -162,38 +162,6 @@ func mergeSpansInPlace(spanToUpdate *zipkincore.Span, newSpan *zipkincore.Span) 
 		spanToUpdate.ParentID = newSpan.ParentID
 	}
 
-	// FIXME this is just for our broken data
-	if spanToUpdate.Timestamp != nil && newSpan.Timestamp == nil {
-		for _, an := range newSpan.Annotations {
-			if an.Value == "sr" {
-				clientCopy := *an
-				clientCopy.Value = "cs"
-				clientCopy.Timestamp = *spanToUpdate.Timestamp
-				clientCopy.Host = &zipkincore.Endpoint{ServiceName: "cara"}
-				spanToUpdate.Annotations = append(spanToUpdate.Annotations, &clientCopy)
-			}
-
-			if an.Value == "ss" && spanToUpdate.Duration != nil {
-				clientCopy := *an
-				clientCopy.Value = "cr"
-				clientCopy.Timestamp = *spanToUpdate.Timestamp + *spanToUpdate.Duration
-				clientCopy.Host = &zipkincore.Endpoint{ServiceName: "cara"}
-				spanToUpdate.Annotations = append(spanToUpdate.Annotations, &clientCopy)
-			}
-		}
-	} else if spanToUpdate.Timestamp == nil && newSpan.Timestamp != nil {
-		spanToUpdate.Timestamp = newSpan.Timestamp
-		spanToUpdate.Annotations = append(spanToUpdate.Annotations,
-			&zipkincore.Annotation{Value: "cs", Timestamp: *newSpan.Timestamp,
-				Host: &zipkincore.Endpoint{ServiceName: "cara"}})
-
-		if newSpan.Duration != nil {
-			spanToUpdate.Annotations = append(spanToUpdate.Annotations,
-				&zipkincore.Annotation{Value: "cr", Timestamp: *newSpan.Timestamp + *newSpan.Duration,
-					Host: &zipkincore.Endpoint{ServiceName: "cara"}})
-		}
-	}
-
 	// merge annotations
 	if len(newSpan.Annotations) > 0 {
 		spanToUpdate.Annotations = append(spanToUpdate.Annotations, newSpan.Annotations...)
