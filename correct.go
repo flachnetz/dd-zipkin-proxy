@@ -121,35 +121,46 @@ func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
 
 	var clientRecv, clientSent, serverRecv, serverSent int64
 	for _, an := range node.Annotations {
-		switch an.Value {
-		case "cs":
-			clientSent = an.Timestamp
+		if len(an.Value) == 2 {
+			switch an.Value {
+			case "cs":
+				clientSent = an.Timestamp
 
-		case "cr":
-			clientRecv = an.Timestamp
+			case "cr":
+				clientRecv = an.Timestamp
 
-		case "sr":
-			serverRecv = an.Timestamp
+			case "sr":
+				serverRecv = an.Timestamp
 
-		case "ss":
-			serverSent = an.Timestamp
+			case "ss":
+				serverSent = an.Timestamp
+			}
 		}
 	}
+
+	//        _________________________
+	//       |_cs________|_____________| cr
+	//                   |
+	//                   |--| <-  (ss-sr)/2 - (cr-cs)/2. If the server is left of the client, this difference is
+	//                      |     positive. We need to substract the difference from the server time to get the
+	//                      |     corrected time in "client time."
+	//            __________|__________
+	//           |_sr_______|__________| ss
 
 	if clientRecv != 0 && clientSent != 0 && serverRecv != 0 && serverSent != 0 {
 		// calculate the offset for children based on the fact, that
 		// sr must occur after cs and ss must occur before cr.
-		offset += ((clientRecv - clientSent) - (serverSent - serverRecv)) / 2
+		offset -= ((clientRecv-clientSent)/2 - (serverSent-serverRecv)/2)
 		node.Timestamp = &clientSent
 
-		log.Infof("Children of span %d in trace %d will get offset %s", node.ID, node.TraceID, time.Duration(offset)*time.Microsecond)
+		// update the duration using the client info.
+		duration := clientRecv - clientSent
+		node.Duration = &duration
 
 	} else if clientSent != 0 && serverRecv != 0 {
 		// we only know the timestamps of server + client, so use those to adjust
-		offset += (clientSent - serverRecv)
+		offset -= (clientSent - serverRecv)
 		node.Timestamp = &clientSent
-
-		log.Infof("Children of span %d in trace %d will get offset %s", node.ID, node.TraceID, time.Duration(offset)*time.Microsecond)
 	}
 
 	for _, child := range tree.ChildrenOf(node) {

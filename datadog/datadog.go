@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/Sirupsen/logrus"
+	"os"
 )
 
 var log = logrus.WithField("prefix", "datadog")
+var logTraces = os.Getenv("DD_LOG_TRACES") == "true"
 
 const flushInterval = 2 * time.Second
 const flushSpanCount = 10000
@@ -40,13 +42,13 @@ func submitTraces(transport tracer.Transport, spansByTrace <-chan map[uint64][]*
 		if len(traces) > 0 {
 			log.Debugf("Sending %d spans in traces %d traces", count, len(traces))
 
-			if true {
+			if logTraces {
+				val, _ := json.MarshalIndent(traces, "", "  ")
+				log.Info(string(val))
+			} else {
 				if _, err := transport.Send(traces); err != nil {
 					log.WithError(err).Warn("Error reporting spans to datadog")
 				}
-			} else {
-				val, _ := json.MarshalIndent(traces, "", "  ")
-				log.Info(string(val))
 			}
 		}
 	}
