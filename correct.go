@@ -61,7 +61,7 @@ func (tree *tree) ChildrenOf(span *zipkincore.Span) []*zipkincore.Span {
 	return tree.nodes[span.ID]
 }
 
-func ErrorCorrectSpans(spans <-chan *zipkincore.Span, output chan<- *zipkincore.Span) {
+func ErrorCorrectSpans(spanChannel <-chan []zipkincore.Span, output chan<- *zipkincore.Span) {
 	traces := make(map[int64]*tree)
 
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -69,19 +69,22 @@ func ErrorCorrectSpans(spans <-chan *zipkincore.Span, output chan<- *zipkincore.
 
 	for {
 		select {
-		case span, ok := <-spans:
+		case spans, ok := <-spanChannel:
 			// stream was closed, stop now
 			if !ok {
 				return
 			}
 
-			trace := traces[span.TraceID]
-			if trace == nil {
-				trace = newTree()
-				traces[span.TraceID] = trace
-			}
+			for idx, _ := range spans {
+				span := &spans[idx]
+				trace := traces[span.TraceID]
+				if trace == nil {
+					trace = newTree()
+					traces[span.TraceID] = trace
+				}
 
-			trace.AddSpan(span)
+				trace.AddSpan(span)
+			}
 
 		case <-ticker.C:
 			finishTraces(traces, output)

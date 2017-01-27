@@ -83,7 +83,7 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	go forwardSpansToChannels(zipkinSpans, channels)
 
 	// do error correction for spans
-	originalZipkinSpans := make(chan *zipkincore.Span, 1024)
+	originalZipkinSpans := make(chan []zipkincore.Span, 8)
 	go ErrorCorrectSpans(originalZipkinSpans, zipkinSpans)
 
 	admin := NewAdminHandler("/admin", "dd-zipkin-proxy",
@@ -136,7 +136,7 @@ func forwardSpansToChannels(source <-chan *zipkincore.Span, targets []chan<- *zi
 	}
 }
 
-func handleSpans(spans chan<- *zipkincore.Span) httprouter.Handle {
+func handleSpans(spans chan<- []zipkincore.Span) httprouter.Handle {
 	return func(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 		var bodyReader io.Reader = req.Body
 		if req.Header.Get("Content-Encoding") == "gzip" {
@@ -169,21 +169,19 @@ func handleSpans(spans chan<- *zipkincore.Span) httprouter.Handle {
 	}
 }
 
-func parseSpansWithJSON(spans chan<- *zipkincore.Span, body []byte) error {
+func parseSpansWithJSON(spansChannel chan<- []zipkincore.Span, body []byte) error {
 	parsedSpans := []zipkincore.Span{}
 
 	if err := json.Unmarshal(body, &parsedSpans); err != nil {
 		return err
 	}
 
-	for idx := range parsedSpans {
-		spans <- &parsedSpans[idx]
-	}
+	spansChannel <- parsedSpans
 
 	return nil
 }
 
-func parseSpansWithThrift(spans chan<- *zipkincore.Span, body []byte) error {
+func parseSpansWithThrift(spansChannel chan<- []zipkincore.Span, body []byte) error {
 	transport := thrift.NewStreamTransportR(bytes.NewReader(body))
 	protocol := thrift.NewTBinaryProtocolTransport(transport)
 
@@ -192,15 +190,14 @@ func parseSpansWithThrift(spans chan<- *zipkincore.Span, body []byte) error {
 		return err
 	}
 
+	spans := make([]zipkincore.Span, size)
 	for idx := 0; idx < size; idx++ {
-		var span zipkincore.Span
-
-		if err := span.Read(protocol); err != nil {
+		if err := spans[idx].Read(protocol); err != nil {
 			return err
 		}
-
-		spans <- &span
 	}
+
+	spansChannel <- spans
 
 	return protocol.ReadListEnd()
 }
