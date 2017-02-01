@@ -186,6 +186,11 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 			converted.Name = "iwg-game"
 			converted.Resource = dropDomainFromUrl(converted.Resource)
 		}
+
+		if lc := converted.Meta["lc"]; lc != "" {
+			converted.Name = lc
+			converted.Service = lc
+		}
 	}
 
 	// If we could not get a service, we'll try to get it from the parent span.
