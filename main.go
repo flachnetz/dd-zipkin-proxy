@@ -20,6 +20,7 @@ import (
 	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
 
 	"encoding/json"
+	"github.com/flachnetz/dd-zipkin-proxy/jsoncodec"
 	. "github.com/flachnetz/go-admin"
 	"sync"
 )
@@ -83,7 +84,7 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	go forwardSpansToChannels(zipkinSpans, channels)
 
 	// do error correction for spans
-	originalZipkinSpans := make(chan []zipkincore.Span, 8)
+	originalZipkinSpans := make(chan *zipkincore.Span, 1024)
 	go ErrorCorrectSpans(originalZipkinSpans, zipkinSpans)
 
 	admin := NewAdminHandler("/admin", "dd-zipkin-proxy",
@@ -136,7 +137,7 @@ func forwardSpansToChannels(source <-chan *zipkincore.Span, targets []chan<- *zi
 	}
 }
 
-func handleSpans(spans chan<- []zipkincore.Span) httprouter.Handle {
+func handleSpans(spans chan<- *zipkincore.Span) httprouter.Handle {
 	return func(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 		var bodyReader io.Reader = req.Body
 		if req.Header.Get("Content-Encoding") == "gzip" {
@@ -169,19 +170,21 @@ func handleSpans(spans chan<- []zipkincore.Span) httprouter.Handle {
 	}
 }
 
-func parseSpansWithJSON(spansChannel chan<- []zipkincore.Span, body []byte) error {
-	parsedSpans := []zipkincore.Span{}
-
+func parseSpansWithJSON(spansChannel chan<- *zipkincore.Span, body []byte) error {
+	parsedSpans := []jsoncodec.Span{}
 	if err := json.Unmarshal(body, &parsedSpans); err != nil {
 		return err
 	}
 
-	spansChannel <- parsedSpans
+	// now convert to zipkin spans
+	for idx := range parsedSpans {
+		spansChannel <- parsedSpans[idx].ToZipkincoreSpan()
+	}
 
 	return nil
 }
 
-func parseSpansWithThrift(spansChannel chan<- []zipkincore.Span, body []byte) error {
+func parseSpansWithThrift(spansChannel chan<- *zipkincore.Span, body []byte) error {
 	transport := thrift.NewStreamTransportR(bytes.NewReader(body))
 	protocol := thrift.NewTBinaryProtocolTransport(transport)
 
@@ -190,14 +193,14 @@ func parseSpansWithThrift(spansChannel chan<- []zipkincore.Span, body []byte) er
 		return err
 	}
 
-	spans := make([]zipkincore.Span, size)
 	for idx := 0; idx < size; idx++ {
-		if err := spans[idx].Read(protocol); err != nil {
+		var span zipkincore.Span
+		if err := span.Read(protocol); err != nil {
 			return err
 		}
-	}
 
-	spansChannel <- spans
+		spansChannel <- &span
+	}
 
 	return protocol.ReadListEnd()
 }
