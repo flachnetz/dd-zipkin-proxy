@@ -1,6 +1,7 @@
 package zipkinproxy
 
 import (
+	"github.com/Sirupsen/logrus"
 	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
 	"time"
 )
@@ -9,8 +10,9 @@ const bufferTime = 10 * time.Second
 
 type tree struct {
 	// parent-id to span
-	nodes   map[int64][]*zipkincore.Span
-	updated time.Time
+	nodes     map[int64][]*zipkincore.Span
+	updated   time.Time
+	nodeCount uint16
 }
 
 func newTree() *tree {
@@ -37,10 +39,12 @@ func (tree *tree) AddSpan(newSpan *zipkincore.Span) {
 		} else {
 			// a new span, just add it to the list of spans
 			tree.nodes[parentId] = append(spans, newSpan)
+			tree.nodeCount++
 		}
 	} else {
 		// no span with this parent, we can just add it
 		tree.nodes[parentId] = []*zipkincore.Span{newSpan}
+		tree.nodeCount++
 	}
 
 	tree.updated = time.Now()
@@ -93,11 +97,17 @@ func ErrorCorrectSpans(spanChannel <-chan *zipkincore.Span, output chan<- *zipki
 func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
 	deadline := time.Now().Add(-bufferTime)
 	for traceID, trace := range traces {
-		if trace.updated.After(deadline) {
+		traceTooLarge := trace.nodeCount > 4096
+		if !traceTooLarge && trace.updated.After(deadline) {
 			continue
 		}
 
 		delete(traces, traceID)
+
+		if traceTooLarge {
+			logrus.Warnf("Trace with %d nodes is too large.", trace.nodeCount)
+			continue
+		}
 
 		// if we have a root, try do error correction
 		root := trace.Root()

@@ -125,45 +125,21 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		}
 	}
 
-	// try to get the service from the cs/cr or sr/ss annotations
-	var minTimestamp, maxTimestamp int64
-	for _, an := range span.Annotations {
-		if an.Host != nil && an.Host.ServiceName != "" {
-			if an.Value == "sr" {
-				converted.Service = an.Host.ServiceName
-			}
-		}
-
-		if an.Timestamp < minTimestamp || minTimestamp == 0 {
-			minTimestamp = an.Timestamp
-		}
-
-		if an.Timestamp > maxTimestamp {
-			maxTimestamp = an.Timestamp
-		}
-	}
-
-	if converted.Start == 0 {
-		converted.Start = 1000 * minTimestamp
-		converted.Duration = 1000 * (maxTimestamp - minTimestamp)
-	}
+	extractInfoFromAnnotations(span, converted)
 
 	// simplify some names
 	if strings.HasPrefix(converted.Name, "http:") {
 		converted.Service = converted.Name[5:]
-	}
 
-	if converted.Name == "transaction" {
+	} else if converted.Name == "transaction" {
 		converted.Service = "oracle"
-	}
 
-	if sql := converted.Meta["sql"]; sql != "" {
+	} else if sql := converted.Meta["sql"]; sql != "" {
 		delete(converted.Meta, "sql")
-		converted.Service = "sql"
 		converted.Resource = sql
-	}
+		converted.Service = "sql"
 
-	if strings.HasPrefix(converted.Name, "redis:") {
+	} else if strings.HasPrefix(converted.Name, "redis:") {
 		converted.Service = "redis"
 
 		if key := converted.Meta["redis.key"]; key != "" {
@@ -172,23 +148,23 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 			// the hash is not really important later on. lets not spam datadog with it.
 			delete(converted.Meta, "redis.key")
 		}
-	}
 
-	if converted.Service == "core-services" {
-		if strings.Contains(converted.Meta["http.url"], ":6080/") {
+	} else if converted.Service == "core-services" {
+		lc := converted.Meta["lc"]
+
+		switch {
+		case strings.Contains(converted.Meta["http.url"], ":6080/"):
 			converted.Service = "iwg-restrictor"
 			converted.Name = iwgNameFromResource(converted.Resource, converted.Name)
 			converted.Resource = dropDomainFromUrl(converted.Resource)
-		}
 
-		if strings.Contains(converted.Meta["http.url"], ":2080/") {
+		case strings.Contains(converted.Meta["http.url"], ":2080/"):
 			converted.Service = "instant-win-game"
 			converted.Name = "iwg-game"
 			converted.Resource = dropDomainFromUrl(converted.Resource)
-		}
 
-		if lc := converted.Meta["lc"]; lc != "" {
-			converted.Name = lc
+		case lc != "" && lc != "servlet" && lc != "HttpClient":
+			delete(converted.Meta, "lc")
 			converted.Service = lc
 		}
 	}
@@ -217,7 +193,7 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		delete(converted.Meta, "lc")
 
 		if converted.Name == "" {
-			converted.Name = converted.Meta["lc"]
+			converted.Name = lc
 		}
 
 		if lc == "consul" {
@@ -225,7 +201,6 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		}
 	}
 
-	// guess a type for the datadog ui.
 	if converted.Name == "transaction" || converted.Service == "redis" {
 		converted.Type = "db"
 	} else {
@@ -234,22 +209,45 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 
 	if converted.Name == "hystrix" {
 		converted.Resource = converted.Meta["thread"]
-	}
-
-	if converted.Name == "" {
+	} else if converted.Name == "" {
 		logrus.Warnf("Could not get a name for this span: %+v converted: %+v", span, converted)
 	}
 
 	// initialize history maps for span -> parent assignment
-	if len(converter.current) >= 40000 || converter.current == nil {
+	const parentLookupMapSize = 1024
+	if len(converter.current) >= parentLookupMapSize || converter.current == nil {
 		converter.previous = converter.current
-		converter.current = make(map[uint64]string, 40000)
+		converter.current = make(map[uint64]string, parentLookupMapSize)
 	}
 
 	// remember the service for a short while
 	converter.current[converted.SpanID] = converted.Service
 
 	return converted
+}
+
+func extractInfoFromAnnotations(span *zipkincore.Span, converted *tracer.Span) {
+	// try to get the service from the cs/cr or sr/ss annotations
+	var minTimestamp, maxTimestamp int64
+	for _, an := range span.Annotations {
+		if an.Value == "sr" && an.Host != nil && an.Host.ServiceName != "" {
+			converted.Service = an.Host.ServiceName
+		}
+
+		if an.Timestamp < minTimestamp || minTimestamp == 0 {
+			minTimestamp = an.Timestamp
+		}
+
+		if an.Timestamp > maxTimestamp {
+			maxTimestamp = an.Timestamp
+		}
+	}
+
+	if converted.Start == 0 {
+		logrus.Warn("Span had no start/duration, guessing from annotations.")
+		converted.Start = 1000 * minTimestamp
+		converted.Duration = 1000 * (maxTimestamp - minTimestamp)
+	}
 }
 
 func dropDomainFromUrl(url string) string {
