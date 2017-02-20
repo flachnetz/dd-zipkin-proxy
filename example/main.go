@@ -61,6 +61,14 @@ func SimplifyResourceName(value string) string {
 	return value
 }
 
+func RetractSensitiveData(value string) string {
+	if strings.Contains(value, "emailAddress=") {
+		value = reEmail.ReplaceAllString(value, "emailAddress=_EMAIL_")
+	}
+
+	return value
+}
+
 type DefaultSpanConverter struct {
 	current  map[uint64]string
 	previous map[uint64]string
@@ -124,6 +132,7 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 
 		if url := converted.Meta["http.url"]; url != "" {
 			converted.Resource = SimplifyResourceName(url)
+			converted.Meta["http.url"] = RetractSensitiveData(url)
 		}
 
 		if status := converted.Meta["http.status_code"]; status != "" {
