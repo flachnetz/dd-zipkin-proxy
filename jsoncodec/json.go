@@ -2,27 +2,27 @@ package jsoncodec
 
 import (
 	"encoding/hex"
-	"errors"
-	"net"
-	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
+	"net"
 )
 
 type Span struct {
-	TraceID           Id
-	Name              string
-	ID                Id
-	ParentID          *Id
+	TraceID  Id
+	Name     string
+	ID       Id
+	ParentID *Id
 
 	Annotations       []Annotation
 	BinaryAnnotations []BinaryAnnotation
 
-	Debug             bool
+	Debug bool
 
 	// In milliseconds
-	Timestamp         *int64
-	Duration          *int64
+	Timestamp *int64
+	Duration  *int64
 }
 
 func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
@@ -38,9 +38,9 @@ func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
 
 		for idx, annotation := range span.Annotations {
 			annotations[idx] = &zipkincore.Annotation{
-				Value: annotation.Value,
+				Value:     annotation.Value,
 				Timestamp: annotation.Timestamp,
-				Host: endpointToHost(annotation.Endpoint),
+				Host:      endpointToHost(annotation.Endpoint),
 			}
 		}
 	}
@@ -53,27 +53,27 @@ func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
 			annotationType, _ := zipkincore.AnnotationTypeFromString(string(annotation.Type))
 
 			binaryAnnotations[idx] = &zipkincore.BinaryAnnotation{
-				Key: annotation.Key,
-				Value: annotation.Value,
+				Key:            annotation.Key,
+				Value:          annotation.Value,
 				AnnotationType: annotationType,
-				Host: endpointToHost(annotation.Endpoint),
+				Host:           endpointToHost(annotation.Endpoint),
 			}
 		}
 	}
 
 	return &zipkincore.Span{
-		TraceID: int64(span.TraceID),
-		Name: span.Name,
-		ID: int64(span.ID),
+		TraceID:  int64(span.TraceID),
+		Name:     span.Name,
+		ID:       int64(span.ID),
 		ParentID: &parentId,
 
-		Annotations: annotations,
+		Annotations:       annotations,
 		BinaryAnnotations: binaryAnnotations,
 
 		Debug: span.Debug,
 
 		Timestamp: span.Timestamp,
-		Duration: span.Duration,
+		Duration:  span.Duration,
 	}
 }
 
@@ -83,7 +83,7 @@ func endpointToHost(endpoint *Endpoint) *zipkincore.Endpoint {
 	}
 
 	result := zipkincore.Endpoint{
-		Port: endpoint.Port,
+		Port:        endpoint.Port,
 		ServiceName: endpoint.ServiceName,
 	}
 
@@ -156,7 +156,7 @@ func (id *Id) MarshalJSON() ([]byte, error) {
 }
 
 func (id *Id) UnmarshalJSON(bytes []byte) error {
-	if len(bytes) < 2 || bytes[0] != '"' || bytes[len(bytes) - 1] != '"' {
+	if len(bytes) < 2 || bytes[0] != '"' || bytes[len(bytes)-1] != '"' {
 		return errors.New("Expected hex encoded string.")
 	}
 
@@ -164,20 +164,20 @@ func (id *Id) UnmarshalJSON(bytes []byte) error {
 		return errors.New("Hex value too large.")
 	}
 
-	bytes = bytes[1:len(bytes) - 2]
+	bytes = bytes[1 : len(bytes)-2]
 
 	var result int64
 	for idx := len(bytes) - 1; idx >= 0; idx-- {
 		c := bytes[idx]
 		switch {
 		case '0' <= c && c <= '9':
-			result = (result << 4) | int64(c - '0')
+			result = (result << 4) | int64(c-'0')
 
 		case 'a' <= c && c <= 'f':
-			result = (result << 4) | int64(c - 'a')
+			result = (result << 4) | int64(c-'a')
 
 		case 'A' <= c && c <= 'F':
-			result = (result << 4) | int64(c - 'A')
+			result = (result << 4) | int64(c-'A')
 
 		default:
 			return fmt.Errorf("Hex value must only contain [0-9a-f], got '%c'.", c)
