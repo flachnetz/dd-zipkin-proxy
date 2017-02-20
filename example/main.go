@@ -54,7 +54,7 @@ func SimplifyResourceName(value string) string {
 		value = reIwgHash.ReplaceAllString(value, "iwg._HASH_")
 	}
 
-	if mightHaveEmailSign && digitCount >= 2 && reEmail.MatchString(value) {
+	if mightHaveEmailSign && digitCount >= 2 {
 		value = reEmail.ReplaceAllString(value, "emailAddress=_EMAIL_")
 	}
 
