@@ -1,12 +1,12 @@
-hash: 50005a11156e0eed37dc6c8aa94ddbfeb7de4f398d4f21fb31a0a20ddc6e27f2
-updated: 2016-12-26T20:59:10.15749571+01:00
+hash: 74f9c1612c87e5425c9fc1f4b409578db5c573d0be5326c47e1427d347e24de8
+updated: 2017-02-20T13:44:04.018579092Z
 imports:
 - name: github.com/apache/thrift
   version: 53dd39833a08ce33582e5ff31fa18bb4735d6731
   subpackages:
   - lib/go/thrift
 - name: github.com/DataDog/dd-trace-go
-  version: 7b923425155d8c39d0cb8b4c69eac24d518b2525
+  version: 18a1bd09e80d07d1ae4713f4cae5bbadb677a2f2
   subpackages:
   - tracer
 - name: github.com/davecgh/go-spew
@@ -69,7 +69,7 @@ imports:
 - name: github.com/Shopify/sarama
   version: 0fb560e5f7fbcaee2f75e3c34174320709f69944
 - name: github.com/Sirupsen/logrus
-  version: d26492970760ca5d33129d2d799e34be5c4782eb
+  version: c078b1e43f58d563c74cebe63c85789e76ddb627
 - name: github.com/ugorji/go
   version: 9c7f9b7a2bc3a520f7c7b30b34b7f85f47fe27b6
   subpackages:

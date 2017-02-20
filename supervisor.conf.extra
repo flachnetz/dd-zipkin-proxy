@@ -1,5 +1,5 @@
 [program:dd-zipkin-proxy]
-command=/dd-zipkin-proxy
+command=/dd-zipkin-proxy --datadog-reporting
 stdout_logfile=/var/log/datadog/dd-zipkin-proxy.log
 stderr_logfile=/var/log/datadog/dd-zipkin-proxy.log
 startsecs=5
