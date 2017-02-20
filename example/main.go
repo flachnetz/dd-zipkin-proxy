@@ -224,7 +224,7 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 	}
 
 	// initialize history maps for span -> parent assignment
-	const parentLookupMapSize = 1024
+	const parentLookupMapSize = 40000
 	if len(converter.current) >= parentLookupMapSize || converter.current == nil {
 		converter.previous = converter.current
 		converter.current = make(map[uint64]string, parentLookupMapSize)

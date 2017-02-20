@@ -1,5 +1,5 @@
-hash: 74f9c1612c87e5425c9fc1f4b409578db5c573d0be5326c47e1427d347e24de8
-updated: 2017-02-20T13:44:04.018579092Z
+hash: 5fc9226c393cb6fdd3f998ff0fbda1215897779fc8b4e4541a584ca26f2c2b24
+updated: 2017-02-20T13:45:38.116976054Z
 imports:
 - name: github.com/apache/thrift
   version: 53dd39833a08ce33582e5ff31fa18bb4735d6731
@@ -26,13 +26,13 @@ imports:
 - name: github.com/go-logfmt/logfmt
   version: 390ab7935ee28ec6b286364bba9b4dd6410cb3d5
 - name: github.com/gogo/protobuf
-  version: 84af2615df1ba1d35cc975ba94b64ee67d6c196e
+  version: 3ea128ab69017b2bb9720f38a32e2dcfc22c0546
   subpackages:
   - proto
 - name: github.com/goji/httpauth
   version: 2da839ab0f4df05a6db5eb277995589dadbd4fb9
 - name: github.com/golang/snappy
-  version: d9eb7a3d35ec988b8585d4a0068e462c27d28380
+  version: 553a641470496b2327abcac10b36396bd98e45c9
 - name: github.com/gorilla/handlers
   version: ee54c7b44cab12289237fb8631314790076e728b
 - name: github.com/jessevdk/go-flags
@@ -40,9 +40,9 @@ imports:
 - name: github.com/julienschmidt/httprouter
   version: 8c199fb6259ffc1af525cc3ad52ee60ba8359669
 - name: github.com/kardianos/osext
-  version: c2c54e542fb797ad986b31721e1baedf214ca413
+  version: 9b883c5eb462dd5cb1b0a7a104fe86bc6b9bd391
 - name: github.com/klauspost/crc32
-  version: cb6bfca970f6908083f26f39a79009d608efd5cd
+  version: 1bab8b35b6bb565f92cbc97939610af9369f942a
 - name: github.com/kr/logfmt
   version: b84e30acd515aadc4b783ad4ff83aff3299bdfe0
 - name: github.com/opentracing/opentracing-go
@@ -65,21 +65,21 @@ imports:
   subpackages:
   - xxHash32
 - name: github.com/rcrowley/go-metrics
-  version: ab2277b1c5d15c3cba104e9cbddbdfc622df5ad8
+  version: 1f30fe9094a513ce4c700b9a54458bbb0c96996c
 - name: github.com/Shopify/sarama
   version: 0fb560e5f7fbcaee2f75e3c34174320709f69944
 - name: github.com/Sirupsen/logrus
   version: c078b1e43f58d563c74cebe63c85789e76ddb627
 - name: github.com/ugorji/go
-  version: 9c7f9b7a2bc3a520f7c7b30b34b7f85f47fe27b6
+  version: c88ee250d0221a57af388746f5cf03768c21d6e2
   subpackages:
   - codec
 - name: golang.org/x/net
-  version: 84ba27dd5b2d8135e9da1395277f2c9333a2ffda
+  version: 6b27048ae5e6ad1ef927e72e437531493de612fe
   subpackages:
   - context
 - name: golang.org/x/sys
-  version: 8f0908ab3b2457e2e15403d3697c9ef5cb4b57a9
+  version: 075e574b89e4c2d22f2286a7e2b919519c6f3547
   subpackages:
   - unix
 testImports: []

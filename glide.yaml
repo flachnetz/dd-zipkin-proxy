@@ -1,4 +1,4 @@
-package: github.com/flachnetz/dd-zipkin
+package: github.com/flachnetz/dd-zipkin-proxy
 import:
 - package: github.com/DataDog/dd-trace-go
   version: ~0.2.0

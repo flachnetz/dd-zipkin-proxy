@@ -1,14 +1,11 @@
 package datadog
 
 import (
-	"reflect"
-	"time"
-	"unsafe"
-
 	"encoding/json"
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/Sirupsen/logrus"
 	"os"
+	"time"
 )
 
 var log = logrus.WithField("prefix", "datadog")
@@ -17,13 +14,9 @@ var logTraces = os.Getenv("DD_LOG_TRACES") == "true"
 const flushInterval = 2 * time.Second
 const flushSpanCount = 10000
 
-// This method extracts a reference to the default transport
-// of the datadog Tracer. This is currently needed, as the default
-// transport is not exported.
-func extractDefaultTransport() tracer.Transport {
-	tracerValue := reflect.ValueOf(tracer.DefaultTracer).Elem()
-	field := tracerValue.FieldByName("transport")
-	return *(*tracer.Transport)(unsafe.Pointer(field.UnsafeAddr()))
+// Create a new default transport.
+func defaultTransport() tracer.Transport {
+	return tracer.NewTransport("", "")
 }
 
 func submitTraces(transport tracer.Transport, spansByTrace <-chan map[uint64][]*tracer.Span) {
@@ -46,7 +39,7 @@ func submitTraces(transport tracer.Transport, spansByTrace <-chan map[uint64][]*
 				val, _ := json.MarshalIndent(traces, "", "  ")
 				log.Info(string(val))
 			} else {
-				if _, err := transport.Send(traces); err != nil {
+				if _, err := transport.SendTraces(traces); err != nil {
 					log.WithError(err).Warn("Error reporting spans to datadog")
 				}
 			}
@@ -98,6 +91,6 @@ func sendSpansUsingTransport(transport tracer.Transport, spans <-chan *tracer.Sp
 // Reports all spans written to the provided channel. This method
 // blocks until the channel is closed, so better call it in a go routine.
 func ReportSpans(spans <-chan *tracer.Span) {
-	transport := extractDefaultTransport()
+	transport := defaultTransport()
 	sendSpansUsingTransport(transport, spans)
 }

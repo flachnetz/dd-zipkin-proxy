@@ -3,6 +3,7 @@ package zipkinproxy
 import (
 	"github.com/Sirupsen/logrus"
 	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
+	"sort"
 	"time"
 )
 
@@ -25,20 +26,20 @@ func newTree() *tree {
 func (tree *tree) AddSpan(newSpan *zipkincore.Span) {
 	parentId := newSpan.GetParentID()
 	if spans := tree.nodes[parentId]; spans != nil {
+		idx := sort.Search(len(spans), func(i int) bool {
+			return newSpan.ID >= spans[i].ID
+		})
+
 		var spanToUpdate *zipkincore.Span
-		// check if we already have a span like this.
-		for _, span := range spans {
-			if span.ID == newSpan.ID {
-				spanToUpdate = span
-				break
-			}
+		if idx < len(spans) && spans[idx].ID == newSpan.ID {
+			spanToUpdate = spans[idx]
 		}
 
 		if spanToUpdate != nil {
 			mergeSpansInPlace(spanToUpdate, newSpan)
 		} else {
 			// a new span, just add it to the list of spans
-			tree.nodes[parentId] = append(spans, newSpan)
+			tree.nodes[parentId] = insertSpan(spans, idx, newSpan)
 			tree.nodeCount++
 		}
 	} else {
@@ -48,6 +49,13 @@ func (tree *tree) AddSpan(newSpan *zipkincore.Span) {
 	}
 
 	tree.updated = time.Now()
+}
+
+func insertSpan(spans []*zipkincore.Span, idx int, span *zipkincore.Span) []*zipkincore.Span {
+	spans = append(spans, nil)
+	copy(spans[idx+1:], spans[idx:])
+	spans[idx] = span
+	return spans
 }
 
 // gets the root of this tree, or nil, if no root exists.
@@ -134,16 +142,16 @@ func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
 		if len(an.Value) == 2 {
 			switch an.Value {
 			case "cs":
-				clientSent = an.Timestamp
+				clientSent = an.Timestamp + offset
 
 			case "cr":
-				clientRecv = an.Timestamp
+				clientRecv = an.Timestamp + offset
 
 			case "sr":
-				serverRecv = an.Timestamp
+				serverRecv = an.Timestamp + offset
 
 			case "ss":
-				serverSent = an.Timestamp
+				serverSent = an.Timestamp + offset
 			}
 		}
 	}
@@ -158,6 +166,10 @@ func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
 	//           |_sr_______|__________| ss
 
 	if clientRecv != 0 && clientSent != 0 && serverRecv != 0 && serverSent != 0 {
+		log.Infof("Found time screw of %s between for span %s",
+			time.Duration((clientRecv-clientSent)/2-(serverSent-serverRecv)/2)*time.Microsecond,
+			node.Name)
+
 		// calculate the offset for children based on the fact, that
 		// sr must occur after cs and ss must occur before cr.
 		offset -= ((clientRecv-clientSent)/2 - (serverSent-serverRecv)/2)
