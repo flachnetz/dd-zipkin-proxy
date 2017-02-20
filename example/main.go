@@ -18,13 +18,13 @@ func main() {
 var reHash = regexp.MustCompile("\\b(?:[a-f0-9]{32}|[a-f0-9-]{8}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{12})\\b")
 var reNumber = regexp.MustCompile("\\b[0-9]{2,}\\b")
 var reIwgHash = regexp.MustCompile("iwg\\.[A-Za-z0-9]{12}\\b")
-var reEmail = regexp.MustCompile("emailAddress=[^@]+@[^&]+")
+var reEmail = regexp.MustCompile("emailAddress=[^%]+%40[^&]+")
 
 func SimplifyResourceName(value string) string {
 	// check if we need to apply the regexp by checking if a match is possible or not
 	digitCount := 0
 	hashCharCount := 0
-	hasEmailSign := false
+	mightHaveEmailSign := false
 	for _, char := range value {
 		isDigit := char >= '0' && char <= '9'
 		if isDigit {
@@ -35,8 +35,8 @@ func SimplifyResourceName(value string) string {
 			hashCharCount++
 		}
 
-		if char == '@' {
-			hasEmailSign = true
+		if char == '%' {
+			mightHaveEmailSign = true
 		}
 	}
 
@@ -54,7 +54,7 @@ func SimplifyResourceName(value string) string {
 		value = reIwgHash.ReplaceAllString(value, "iwg._HASH_")
 	}
 
-	if hasEmailSign && reEmail.MatchString(value) {
+	if mightHaveEmailSign && digitCount >= 2 && reEmail.MatchString(value) {
 		value = reEmail.ReplaceAllString(value, "emailAddress=_EMAIL_")
 	}
 
