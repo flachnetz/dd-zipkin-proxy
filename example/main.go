@@ -15,7 +15,7 @@ func main() {
 	zipkinproxy.Main(converter.Convert)
 }
 
-var reHash = regexp.MustCompile("\\b(?:[a-f0-9]{32}|[a-f0-9-]{8}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{12})\\b")
+var reHash = regexp.MustCompile("\\b(?:[a-f0-9]{32}|[a-f0-9]{24}|[a-f0-9-]{8}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{12})\\b")
 var reNumber = regexp.MustCompile("\\b[0-9]{2,}\\b")
 var reIwgHash = regexp.MustCompile("iwg\\.[A-Za-z0-9]{12}\\b")
 var reEmail = regexp.MustCompile("emailAddress=[^%]+%40[^&]+")
@@ -41,7 +41,7 @@ func SimplifyResourceName(value string) string {
 	}
 
 	// only search for hash, if we have enough chars for it
-	if hashCharCount >= 32 {
+	if hashCharCount >= 24 {
 		value = reHash.ReplaceAllString(value, "_HASH_")
 	}
 
