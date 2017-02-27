@@ -18,14 +18,12 @@ func main() {
 var reHash = regexp.MustCompile("\\b(?:[a-f0-9]{32}|[a-f0-9]{24}|[a-f0-9-]{8}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{12})\\b")
 var reNumber = regexp.MustCompile("\\b[0-9]{2,}\\b")
 var reIwgHash = regexp.MustCompile("iwg\\.[A-Za-z0-9]{12}\\b")
-var reEmail = regexp.MustCompile("emailAddress=[^%]+%40[^&]+")
 
 func SimplifyResourceName(value string) string {
 	// check if we need to apply the regexp by checking if a match is possible or not
 	digitCount := 0
 	hashCharCount := 0
-	mightHaveEmailSign := false
-	for _, char := range value {
+	for idx, char := range value {
 		isDigit := char >= '0' && char <= '9'
 		if isDigit {
 			digitCount++
@@ -34,9 +32,9 @@ func SimplifyResourceName(value string) string {
 		if isDigit || char >= 'a' && char <= 'f' {
 			hashCharCount++
 		}
-
-		if char == '%' {
-			mightHaveEmailSign = true
+		if char == '?' {
+			value = value[:idx]
+			break
 		}
 	}
 
@@ -54,18 +52,14 @@ func SimplifyResourceName(value string) string {
 		value = reIwgHash.ReplaceAllString(value, "iwg._HASH_")
 	}
 
-	if mightHaveEmailSign && digitCount >= 2 {
-		value = reEmail.ReplaceAllString(value, "emailAddress=_EMAIL_")
-	}
-
 	return value
 }
 
-func RetractSensitiveData(value string) string {
-	if strings.Contains(value, "emailAddress=") {
-		value = reEmail.ReplaceAllString(value, "emailAddress=_EMAIL_")
+func RemoveQueryString(value string) string {
+	idx := strings.IndexByte(value, '?')
+	if idx >= 0 {
+		return value[:idx]
 	}
-
 	return value
 }
 
@@ -132,7 +126,7 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 
 		if url := converted.Meta["http.url"]; url != "" {
 			converted.Resource = SimplifyResourceName(url)
-			converted.Meta["http.url"] = RetractSensitiveData(url)
+			converted.Meta["http.url"] = RemoveQueryString(url)
 		}
 
 		if status := converted.Meta["http.status_code"]; status != "" {
