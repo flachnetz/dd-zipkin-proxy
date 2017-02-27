@@ -183,7 +183,8 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 			converted.Resource = dropDomainFromUrl(converted.Resource)
 
 		case lc != "" && lc != "servlet" && lc != "HttpClient":
-			delete(converted.Meta, "lc")
+			// TODO: find proper fix for this service name / name datadog magic
+			//delete(converted.Meta, "lc")
 			converted.Service = lc
 		}
 	}
@@ -209,7 +210,8 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 	}
 
 	if lc := converted.Meta["lc"]; lc != "" {
-		delete(converted.Meta, "lc")
+		// TODO: here as well
+		//delete(converted.Meta, "lc")
 
 		if converted.Name == "" {
 			converted.Name = lc
