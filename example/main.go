@@ -270,10 +270,23 @@ func extractInfoFromAnnotations(span *zipkincore.Span, converted *tracer.Span) {
 	}
 
 	if converted.Start == 0 {
-		logrus.Warn("Span had no start/duration, guessing from annotations.")
+		logrus.Warnf("Span had no start/duration, guessing from annotations: %s", identifySpan(span))
 		converted.Start = 1000 * minTimestamp
 		converted.Duration = 1000 * (maxTimestamp - minTimestamp)
 	}
+}
+
+// Tries to get some identification for this span. The method tries
+// to include the value of the local-component tag and the value of the tags name.
+func identifySpan(span *zipkincore.Span) string {
+	var name string
+	for _, an := range span.BinaryAnnotations {
+		if an.Key == "lc" {
+			name = string(an.Value) + ":"
+		}
+	}
+
+	return name + span.Name
 }
 
 func dropDomainFromUrl(url string) string {

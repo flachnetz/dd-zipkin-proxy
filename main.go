@@ -106,7 +106,7 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 func registerAdminHandler(router *httprouter.Router, handler http.Handler) {
 	router.Handler("GET", "/", http.RedirectHandler("/admin", http.StatusTemporaryRedirect))
 
-	methods := []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
+	methods := []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD"}
 	for _, method := range methods {
 		router.Handler(method, "/admin", handler)
 		router.Handler(method, "/admin/*path", handler)
