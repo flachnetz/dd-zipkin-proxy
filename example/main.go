@@ -181,6 +181,11 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 			//delete(converted.Meta, "lc")
 			converted.Service = lc
 		}
+	} else if converted.Service == "account-balance-service" {
+		lc := converted.Meta["lc"]
+		if strings.Contains(strings.ToLower(lc), "mongo") {
+			converted.Service = "abs-mongo"
+		}
 	}
 
 	// If we could not get a service, we'll try to get it from the parent span.
