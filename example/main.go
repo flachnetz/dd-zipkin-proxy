@@ -232,6 +232,11 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		logrus.Warnf("Could not get a name for this span: %+v converted: %+v", span, converted)
 	}
 
+	// if name and service differ than the overview page in datadog will only show the one with
+	// most of the time spend. This is why we just rename it to the service here so that we can get a nice
+	// overview of all resources belonging to the service. Can be removed in the future when datadog is changing things
+	converted.Name = converted.Service
+
 	// initialize history maps for span -> parent assignment
 	const parentLookupMapSize = 40000
 	if len(converter.current) >= parentLookupMapSize || converter.current == nil {
