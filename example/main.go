@@ -233,6 +233,18 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		logrus.Warnf("Could not get a name for this span: %+v converted: %+v", span, converted)
 	}
 
+	if ddService := converted.Meta["dd.service"]; ddService != "" {
+		converted.Service = ddService
+	}
+
+	if ddName := converted.Meta["dd.name"]; ddName != "" {
+		converted.Name = ddName
+	}
+
+	if ddResource := converted.Meta["dd.resource"]; ddResource != "" {
+		converted.Resource = SimplifyResourceName(ddResource)
+	}
+
 	// if name and service differ than the overview page in datadog will only show the one with
 	// most of the time spend. This is why we just rename it to the service here so that we can get a nice
 	// overview of all resources belonging to the service. Can be removed in the future when datadog is changing things
