@@ -1,5 +1,5 @@
-hash: 5fc9226c393cb6fdd3f998ff0fbda1215897779fc8b4e4541a584ca26f2c2b24
-updated: 2017-02-20T13:45:38.116976054Z
+hash: 05ba65f289d3de28790ce692707942477e0b0e40ce84a1dab10e438c810d9cdd
+updated: 2017-03-03T09:40:59.362161781Z
 imports:
 - name: github.com/apache/thrift
   version: 53dd39833a08ce33582e5ff31fa18bb4735d6731
@@ -22,7 +22,7 @@ imports:
 - name: github.com/eapache/queue
   version: 44cc805cf13205b55f69e14bcb69867d1ae92f98
 - name: github.com/flachnetz/go-admin
-  version: be321b3dd5ffb439434d1224b334b35a62fd5d28
+  version: 8d781c5fd4118277fd23696221ed07aa7ec89eeb
 - name: github.com/go-logfmt/logfmt
   version: 390ab7935ee28ec6b286364bba9b4dd6410cb3d5
 - name: github.com/gogo/protobuf
@@ -69,7 +69,7 @@ imports:
 - name: github.com/Shopify/sarama
   version: 0fb560e5f7fbcaee2f75e3c34174320709f69944
 - name: github.com/Sirupsen/logrus
-  version: c078b1e43f58d563c74cebe63c85789e76ddb627
+  version: 0208149b40d863d2c1a2f8fe5753096a9cf2cc8b
 - name: github.com/ugorji/go
   version: c88ee250d0221a57af388746f5cf03768c21d6e2
   subpackages:
@@ -82,4 +82,20 @@ imports:
   version: 075e574b89e4c2d22f2286a7e2b919519c6f3547
   subpackages:
   - unix
-testImports: []
+testImports:
+- name: github.com/onsi/gomega
+  version: c463cd2a8578290d4be7a25cba69de81cf35785e
+  subpackages:
+  - format
+  - internal/assertion
+  - internal/asyncassertion
+  - internal/oraclematcher
+  - internal/testingtsupport
+  - matchers
+  - matchers/support/goraph/bipartitegraph
+  - matchers/support/goraph/edge
+  - matchers/support/goraph/node
+  - matchers/support/goraph/util
+  - types
+- name: gopkg.in/yaml.v2
+  version: a3f3340b5840cee44f372bddb5880fcbc419b46a

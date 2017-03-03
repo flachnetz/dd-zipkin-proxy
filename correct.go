@@ -51,6 +51,19 @@ func (tree *tree) AddSpan(newSpan *zipkincore.Span) {
 	tree.updated = time.Now()
 }
 
+func (tree *tree) GetSpan(parentId, spanId int64) *zipkincore.Span {
+	spans := tree.nodes[parentId]
+	idx := sort.Search(len(spans), func(i int) bool {
+		return spanId >= spans[i].ID
+	})
+
+	if idx < len(spans) && spans[idx].ID == spanId {
+		return spans[idx]
+	}
+
+	return nil
+}
+
 func insertSpan(spans []*zipkincore.Span, idx int, span *zipkincore.Span) []*zipkincore.Span {
 	spans = append(spans, nil)
 	copy(spans[idx+1:], spans[idx:])
@@ -137,18 +150,25 @@ func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
 		*node.Timestamp += offset
 	}
 
+	var clientService, serverService string
 	var clientRecv, clientSent, serverRecv, serverSent int64
 	for _, an := range node.Annotations {
 		if len(an.Value) == 2 {
 			switch an.Value {
 			case "cs":
 				clientSent = an.Timestamp + offset
+				if an.Host != nil {
+					clientService = an.Host.ServiceName
+				}
 
 			case "cr":
 				clientRecv = an.Timestamp + offset
 
 			case "sr":
 				serverRecv = an.Timestamp + offset
+				if an.Host != nil {
+					serverService = an.Host.ServiceName
+				}
 
 			case "ss":
 				serverSent = an.Timestamp + offset
@@ -159,20 +179,21 @@ func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
 	//        _________________________
 	//       |_cs________|_____________| cr
 	//                   |
-	//                   |--| <-  (ss-sr)/2 - (cr-cs)/2. If the server is left of the client, this difference is
-	//                      |     positive. We need to substract the difference from the server time to get the
-	//                      |     corrected time in "client time."
+	//                   |--| <-  (ss+sr)/2 - (cr+cs)/2. If the server is left of the client, this difference is
+	//                      |     positive. We need to substract the clients average from the servers average time
+	//                      |     to get the corrected time in "client time."
 	//            __________|__________
 	//           |_sr_______|__________| ss
 
 	if clientRecv != 0 && clientSent != 0 && serverRecv != 0 && serverSent != 0 {
-		log.Infof("Found time screw of %s between for span %s",
-			time.Duration((clientRecv-clientSent)/2-(serverSent-serverRecv)/2)*time.Microsecond,
-			node.Name)
+		screw := (serverRecv+serverSent)/2 - (clientRecv+clientSent)/2
+		log.Infof("Found time screw of %s between c=%s and s=%s for span '%s'",
+			time.Duration(screw)*time.Microsecond,
+			clientService, serverService, node.Name)
 
 		// calculate the offset for children based on the fact, that
 		// sr must occur after cs and ss must occur before cr.
-		offset -= ((clientRecv-clientSent)/2 - (serverSent-serverRecv)/2)
+		offset -= screw
 		node.Timestamp = &clientSent
 
 		// update the duration using the client info.
@@ -181,7 +202,7 @@ func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
 
 	} else if clientSent != 0 && serverRecv != 0 {
 		// we only know the timestamps of server + client, so use those to adjust
-		offset -= (clientSent - serverRecv)
+		offset -= serverRecv - clientSent
 		node.Timestamp = &clientSent
 	}
 
@@ -191,17 +212,52 @@ func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
 }
 
 func mergeSpansInPlace(spanToUpdate *zipkincore.Span, newSpan *zipkincore.Span) {
+	// update id only if not yet set
 	if newSpan.ParentID != nil && spanToUpdate.ParentID == nil {
 		spanToUpdate.ParentID = newSpan.ParentID
 	}
 
+	// if the new span was send from a server then we want to priority the annotations
+	// of the client span. Becuase of this, we'll add the new spans annotations in front of
+	// the old spans annotations - sounds counter-intuitive?
+	// It is not, if you think of it as "the last value wins!" - like settings values in a map.
+	newSpanIsServer := hasAnnotation(newSpan, "sr")
+
 	// merge annotations
 	if len(newSpan.Annotations) > 0 {
-		spanToUpdate.Annotations = append(spanToUpdate.Annotations, newSpan.Annotations...)
+		if newSpanIsServer {
+			// prepend the new annotations to the spanToUpdate ones
+			spans := make([]*zipkincore.Annotation, 0, len(spanToUpdate.Annotations)+len(newSpan.Annotations))
+			spans = append(spans, newSpan.Annotations...)
+			spans = append(spans, spanToUpdate.Annotations...)
+			spanToUpdate.Annotations = spans
+
+		} else {
+			spanToUpdate.Annotations = append(spanToUpdate.Annotations, newSpan.Annotations...)
+		}
 	}
 
 	// merge binary annotations
 	if len(newSpan.BinaryAnnotations) > 0 {
-		spanToUpdate.BinaryAnnotations = append(spanToUpdate.BinaryAnnotations, newSpan.BinaryAnnotations...)
+		if newSpanIsServer {
+			// prepend the new annotations to the spanToUpdate ones
+			spans := make([]*zipkincore.BinaryAnnotation, 0, len(spanToUpdate.BinaryAnnotations)+len(newSpan.BinaryAnnotations))
+			spans = append(spans, spanToUpdate.BinaryAnnotations...)
+			spans = append(spans, newSpan.BinaryAnnotations...)
+			spanToUpdate.BinaryAnnotations = spans
+
+		} else {
+			spanToUpdate.BinaryAnnotations = append(spanToUpdate.BinaryAnnotations, newSpan.BinaryAnnotations...)
+		}
 	}
+}
+
+func hasAnnotation(span *zipkincore.Span, name string) bool {
+	for _, an := range span.Annotations {
+		if an.Value == name {
+			return true
+		}
+	}
+
+	return false
 }

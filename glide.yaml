@@ -22,3 +22,7 @@ import:
   version: 137bfcefd3340b28186f4fd3608719fcb120f98f
 - package: github.com/flachnetz/go-admin
   version: ~1.4.0
+testImport:
+- package: github.com/onsi/gomega
+  version: c463cd2a8578290d4be7a25cba69de81cf35785e
+- package: gopkg.in/yaml.v2
