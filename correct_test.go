@@ -60,6 +60,7 @@ func TestCorrectTimings(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		indices := rand.Perm(4)
+		baseOffset := rand.Int31n(10000)
 
 		client, sharedClient, sharedServer, server := threeSpans(100, 200, 1110, 1190)
 
@@ -71,13 +72,13 @@ func TestCorrectTimings(t *testing.T) {
 			tree.AddSpan(spans[indices[idx]])
 		}
 
-		correctTreeTimings(tree, client, 0)
+		correctTreeTimings(tree, client, int64(baseOffset))
 
-		Expect(*client.Timestamp).To(BeEquivalentTo(100))
-		Expect(*server.Timestamp).To(BeEquivalentTo(110))
+		Expect(*client.Timestamp).To(BeEquivalentTo(baseOffset + 100))
+		Expect(*server.Timestamp).To(BeEquivalentTo(baseOffset + 110))
 
 		shared := tree.GetSpan(*sharedClient.ParentID, sharedClient.ID)
-		Expect(*shared.Timestamp).To(BeEquivalentTo(100))
+		Expect(*shared.Timestamp).To(BeEquivalentTo(baseOffset + 100))
 	}
 }
 

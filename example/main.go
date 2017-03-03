@@ -181,7 +181,7 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 			//delete(converted.Meta, "lc")
 			converted.Service = lc
 		}
-	} 
+	}
 
 	// If we could not get a service, we'll try to get it from the parent span.
 	// Try first in the current map, then in the previous one.
