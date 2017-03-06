@@ -1,6 +1,7 @@
 package jsoncodec
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -10,28 +11,81 @@ import (
 )
 
 type Span struct {
-	TraceID  Id
-	Name     string
-	ID       Id
-	ParentID *Id
+	TraceID  Id  `json:"traceId"`
+	ID       Id  `json:"id"`
+	ParentID *Id `json:"parentId"`
 
-	Annotations       []Annotation
-	BinaryAnnotations []BinaryAnnotation
+	Annotations       []Annotation       `json:"annotations"`
+	BinaryAnnotations []BinaryAnnotation `json:"binaryAnnotations"`
 
-	Debug bool
+	Name string `json:"name"`
 
-	// In milliseconds
-	Timestamp *int64
-	Duration  *int64
+	Debug bool `json:"debug"`
+
+	Timestamp *int64 `json:"timestamp"`
+	Duration  *int64 `json:"duration"`
+}
+
+type Annotation struct {
+	Timestamp int64     `json:"timestamp"`
+	Value     string    `json:"value"`
+	Endpoint  *Endpoint `json:"endpoint"`
+}
+
+type BinaryAnnotation struct {
+	Key      string      `json:"key"`
+	Value    interface{} `json:"value"`
+	Endpoint *Endpoint   `json:"endpoint"`
+}
+
+type Endpoint struct {
+	ServiceName string `json:"serviceName"`
+	Ipv4        net.IP `json:"ipv4,omitempty"`
+	Ipv6        net.IP `json:"ipv6,omitempty"`
+	Port        uint16 `json:"port"`
+}
+
+type Id int64
+
+var _ json.Marshaler = new(Id)
+var _ json.Unmarshaler = new(Id)
+
+func FromSpan(span *zipkincore.Span) Span {
+	var annotations []Annotation
+	for _, an := range span.Annotations {
+		annotations = append(annotations, Annotation{
+			Timestamp: an.Timestamp,
+			Value:     an.Value,
+			Endpoint:  endpointToJson(an.Host),
+		})
+	}
+
+	var binaryAnnotations []BinaryAnnotation
+	for _, an := range span.BinaryAnnotations {
+		binaryAnnotations = append(binaryAnnotations, BinaryAnnotation{
+			Key:      an.Key,
+			Value:    string(an.Value),
+			Endpoint: endpointToJson(an.Host),
+		})
+	}
+
+	return Span{
+		TraceID:  Id(span.TraceID),
+		ID:       Id(span.ID),
+		ParentID: (*Id)(span.ParentID),
+
+		Name: span.Name,
+
+		Annotations:       annotations,
+		BinaryAnnotations: binaryAnnotations,
+
+		Timestamp: span.Timestamp,
+		Duration:  span.Duration,
+		Debug:     span.Debug,
+	}
 }
 
 func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
-	var parentId int64
-
-	if span.ParentID != nil {
-		parentId = int64(*span.ParentID)
-	}
-
 	var annotations []*zipkincore.Annotation
 	if len(span.Annotations) > 0 {
 		annotations = make([]*zipkincore.Annotation, len(span.Annotations))
@@ -40,32 +94,29 @@ func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
 			annotations[idx] = &zipkincore.Annotation{
 				Value:     annotation.Value,
 				Timestamp: annotation.Timestamp,
-				Host:      endpointToHost(annotation.Endpoint),
+				Host:      endpointToZipkin(annotation.Endpoint),
 			}
 		}
 	}
 
 	var binaryAnnotations []*zipkincore.BinaryAnnotation
 	if len(span.BinaryAnnotations) > 0 {
-		binaryAnnotations = make([]*zipkincore.BinaryAnnotation, len(span.Annotations))
+		binaryAnnotations = make([]*zipkincore.BinaryAnnotation, len(span.BinaryAnnotations))
 
 		for idx, annotation := range span.BinaryAnnotations {
-			annotationType, _ := zipkincore.AnnotationTypeFromString(string(annotation.Type))
-
 			binaryAnnotations[idx] = &zipkincore.BinaryAnnotation{
-				Key:            annotation.Key,
-				Value:          annotation.Value,
-				AnnotationType: annotationType,
-				Host:           endpointToHost(annotation.Endpoint),
+				Key:   annotation.Key,
+				Value: toBytes(annotation.Value),
+				Host:  endpointToZipkin(annotation.Endpoint),
 			}
 		}
 	}
 
 	return &zipkincore.Span{
-		TraceID:  int64(span.TraceID),
-		Name:     span.Name,
-		ID:       int64(span.ID),
-		ParentID: &parentId,
+		TraceID: int64(span.TraceID),
+		ID:      int64(span.ID),
+
+		ParentID: (*int64)(span.ParentID),
 
 		Annotations:       annotations,
 		BinaryAnnotations: binaryAnnotations,
@@ -77,13 +128,44 @@ func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
 	}
 }
 
-func endpointToHost(endpoint *Endpoint) *zipkincore.Endpoint {
+func toBytes(i interface{}) []byte {
+	if str, ok := i.(string); ok {
+		return []byte(str)
+	} else {
+		return []byte(fmt.Sprintf("%v", i))
+	}
+}
+
+func endpointToJson(endpoint *zipkincore.Endpoint) *Endpoint {
+	if endpoint == nil {
+		return nil
+	}
+
+	result := &Endpoint{
+		Port:        uint16(endpoint.Port),
+		ServiceName: endpoint.ServiceName,
+	}
+
+	if endpoint.Ipv4 != 0 {
+		var bytes [4]byte
+		binary.BigEndian.PutUint32(bytes[:], uint32(endpoint.Ipv4))
+		result.Ipv4 = net.IP(bytes[:])
+	}
+
+	if endpoint.Ipv6 != nil {
+		result.Ipv6 = net.IP(endpoint.Ipv6)
+	}
+
+	return result
+}
+
+func endpointToZipkin(endpoint *Endpoint) *zipkincore.Endpoint {
 	if endpoint == nil {
 		return nil
 	}
 
 	result := zipkincore.Endpoint{
-		Port:        endpoint.Port,
+		Port:        int16(endpoint.Port),
 		ServiceName: endpoint.ServiceName,
 	}
 
@@ -99,40 +181,8 @@ func endpointToHost(endpoint *Endpoint) *zipkincore.Endpoint {
 	return &result
 }
 
-type Annotation struct {
-	Timestamp int64
-	Value     string
-	Endpoint  *Endpoint
-}
-
-type BinaryAnnotation struct {
-	Key      string
-	Endpoint *Endpoint
-	Type     Type
-	Value    json.RawMessage
-}
-
-type Endpoint struct {
-	ServiceName string
-	Ipv4        *net.IP
-	Ipv6        *net.IP
-	Port        int16
-}
-
-type Type string
-
-//const typeBool = "BOOL"
-//const typeBytes = "BYTES"
-//const typei16 = "I16"
-//const typei32 = "I32"
-//const typei64 = "I64"
-//const typeDouble = "DOUBLE"
-//const typeString = "STRING"
-
-type Id int64
-
 func (id *Id) MarshalJSON() ([]byte, error) {
-	value := *id
+	value := int64(*id)
 
 	bytes := [8]byte{
 		byte((value >> 56) & 0xff),
@@ -160,24 +210,22 @@ func (id *Id) UnmarshalJSON(bytes []byte) error {
 		return errors.New("Expected hex encoded string.")
 	}
 
-	if len(bytes) > 32 {
+	if len(bytes) > 34 {
 		return errors.New("Hex value too large.")
 	}
 
-	bytes = bytes[1 : len(bytes)-2]
-
 	var result int64
-	for idx := len(bytes) - 1; idx >= 0; idx-- {
+	for idx := 1; idx < len(bytes)-1; idx++ {
 		c := bytes[idx]
 		switch {
 		case '0' <= c && c <= '9':
 			result = (result << 4) | int64(c-'0')
 
 		case 'a' <= c && c <= 'f':
-			result = (result << 4) | int64(c-'a')
+			result = (result << 4) | int64(c-'a') + 10
 
 		case 'A' <= c && c <= 'F':
-			result = (result << 4) | int64(c-'A')
+			result = (result << 4) | int64(c-'A') + 10
 
 		default:
 			return fmt.Errorf("Hex value must only contain [0-9a-f], got '%c'.", c)

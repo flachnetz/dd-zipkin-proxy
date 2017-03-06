@@ -100,6 +100,8 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	router := httprouter.New()
 	registerAdminHandler(router, admin)
 	router.POST("/api/v1/spans", handleSpans(originalZipkinSpans))
+
+	log.Infof("Starting http server on %s", opts.ListenAddr)
 	log.Fatal(http.ListenAndServe(opts.ListenAddr, handlers.LoggingHandler(log.Logger.Writer(), router)))
 }
 
@@ -232,14 +234,14 @@ func (buffer *SpansBuffer) ReadFrom(spans <-chan *zipkincore.Span) {
 	}
 }
 
-func (buffer *SpansBuffer) ToSlice() []*zipkincore.Span {
+func (buffer *SpansBuffer) ToSlice() []jsoncodec.Span {
 	buffer.lock.Lock()
 	defer buffer.lock.Unlock()
 
-	var result []*zipkincore.Span
+	var result []jsoncodec.Span
 	for _, span := range buffer.spans {
 		if span != nil {
-			result = append(result, span)
+			result = append(result, jsoncodec.FromSpan(span))
 		}
 	}
 
