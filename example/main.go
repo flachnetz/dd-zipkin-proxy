@@ -151,6 +151,7 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		delete(converted.Meta, "sql")
 		converted.Resource = sql
 		converted.Service = "sql"
+		converted.Meta["sql.query"] = sql
 
 	} else if strings.HasPrefix(converted.Name, "redis:") {
 		converted.Service = "redis"
