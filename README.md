@@ -5,6 +5,5 @@ with zipkins http thrift codec. The json codec might have some problems.
 
 ## Build
 
-Build the proxy by running `./build.sh` or `./build-docker.sh`.
-
+Build the proxy by running `./build.sh` 
 
