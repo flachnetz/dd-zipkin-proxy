@@ -1,9 +1,9 @@
 # dd-zipkin-proxy
 
-A simple zipkin to datadog proxy for datadogs new traces feature. Works best
+A simple zipkin to datadog proxy for datadogs new apm feature. Works best
 with zipkins http thrift codec. The json codec might have some problems.
 
-## Build
+## Example
 
-Build the proxy by running `./build.sh` 
+On how to use the proxy, see the `example` directory for a simple example.
 

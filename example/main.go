@@ -8,60 +8,11 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 )
 
 func main() {
 	converter := DefaultSpanConverter{}
 	zipkinproxy.Main(converter.Convert)
-}
-
-var reHash = regexp.MustCompile("\\b(?:[a-f0-9]{32}|[a-f0-9]{24}|[a-f0-9-]{8}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{12})\\b")
-var reNumber = regexp.MustCompile("\\b[0-9]{2,}\\b")
-var reIwgHash = regexp.MustCompile("iwg\\.[A-Za-z0-9]{12}\\b")
-
-func SimplifyResourceName(value string) string {
-	// check if we need to apply the regexp by checking if a match is possible or not
-	digitCount := 0
-	hashCharCount := 0
-	for idx, char := range value {
-		isDigit := char >= '0' && char <= '9'
-		if isDigit {
-			digitCount++
-		}
-
-		if isDigit || char >= 'a' && char <= 'f' {
-			hashCharCount++
-		}
-		if char == '?' {
-			value = value[:idx]
-			break
-		}
-	}
-
-	// only search for hash, if we have enough chars for it
-	if hashCharCount >= 24 {
-		value = reHash.ReplaceAllString(value, "_HASH_")
-	}
-
-	// only replace numbers, if we have enough digits for a match
-	if digitCount >= 2 {
-		value = reNumber.ReplaceAllString(value, "_NUMBER_")
-	}
-
-	if strings.HasPrefix(value, "iwg.") {
-		value = reIwgHash.ReplaceAllString(value, "iwg._HASH_")
-	}
-
-	return value
-}
-
-func RemoveQueryString(value string) string {
-	idx := strings.IndexByte(value, '?')
-	if idx >= 0 {
-		return value[:idx]
-	}
-	return value
 }
 
 type DefaultSpanConverter struct {
@@ -91,15 +42,6 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 	// datadog traces use a trace of 0
 	if converted.ParentID == converted.SpanID {
 		converted.ParentID = 0
-	}
-
-	// split "http:/some/url" or "get:/some/url"
-	for _, prefix := range []string{"http:/", "get:/", "post:/"} {
-		if strings.HasPrefix(converted.Name, prefix) {
-			converted.Resource = converted.Name[len(prefix)-1:]
-			converted.Name = prefix[:len(prefix)-2]
-			break
-		}
 	}
 
 	// convert binary annotations (like tags)
@@ -142,116 +84,25 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 
 	updateInfoFromAnnotations(span, converted)
 
-	// simplify some names
-	if strings.HasPrefix(converted.Name, "http:") {
-		converted.Service = converted.Name[5:]
-
-	} else if converted.Name == "transaction" {
-		converted.Service = "oracle"
-
-	} else if sql := converted.Meta["sql"]; sql != "" {
-		delete(converted.Meta, "sql")
-		converted.Resource = sql
-		converted.Service = "sql"
-		converted.Meta["sql.query"] = sql
-
-	} else if strings.HasPrefix(converted.Name, "redis:") {
-		converted.Service = "redis"
-
-		if key := converted.Meta["redis.key"]; key != "" {
-			converted.Resource = SimplifyResourceName(key)
-
-			// the hash is not really important later on. lets not spam datadog with it.
-			delete(converted.Meta, "redis.key")
-		}
-
-	} else if converted.Service == "core-services" {
-		lc := converted.Meta["lc"]
-
-		switch {
-		case strings.Contains(converted.Meta["http.url"], ":6080/"):
-			converted.Service = "iwg-restrictor"
-			converted.Name = iwgNameFromResource(converted.Resource, converted.Name)
-			converted.Resource = dropDomainFromUrl(converted.Resource)
-
-		case strings.Contains(converted.Meta["http.url"], ":2080/"):
-			converted.Service = "instant-win-game"
-			converted.Name = "iwg-game"
-			converted.Resource = dropDomainFromUrl(converted.Resource)
-
-		case lc != "" && lc != "servlet" && lc != "HttpClient":
-			// TODO: find proper fix for this service name / name datadog magic
-			//delete(converted.Meta, "lc")
-			converted.Service = lc
-		}
-	}
-
-	// If we could not get a service, we'll try to get it from the parent span.
-	// Try first in the current map, then in the previous one.
-	if converted.Service == "" {
-		parentService := converter.current[converted.ParentID]
-		if parentService != "" {
-			converted.Service = parentService
-		} else {
-			parentService = converter.previous[converted.ParentID]
-			if parentService != "" {
-				converted.Service = parentService
-			}
-		}
-
-		// if we did not get a service, use a fallback
-		if converted.Service == "" {
-			logrus.Warnf("Could not get a service for this span: %+v", span)
-			converted.Service = "unknown"
-		}
-	}
-
-	if lc := converted.Meta["lc"]; lc != "" {
-		// TODO: here as well
-		//delete(converted.Meta, "lc")
-
-		if converted.Name == "" {
-			converted.Name = lc
-		}
-
-		if lc == "consul" {
-			converted.Service = "consul"
-		}
-	}
-
-	if converted.Name == "transaction" || converted.Service == "redis" {
-		converted.Type = "db"
-	} else {
-		converted.Type = "http"
-	}
-
-	if converted.Name == "hystrix" {
-		converted.Resource = converted.Meta["thread"]
-	} else if converted.Name == "" {
-		logrus.Warnf("Could not get a name for this span: %+v converted: %+v", span, converted)
-	}
-
 	if ddService := converted.Meta["dd.service"]; ddService != "" {
 		converted.Service = ddService
+		delete(converted.Meta, "dd.service")
 	}
 
 	if ddName := converted.Meta["dd.name"]; ddName != "" {
 		converted.Name = ddName
+		delete(converted.Meta, "dd.name")
 	}
 
 	if ddResource := converted.Meta["dd.resource"]; ddResource != "" {
 		converted.Resource = SimplifyResourceName(ddResource)
+		delete(converted.Meta, "dd.resource")
 	}
 
 	// if name and service differ than the overview page in datadog will only show the one with
 	// most of the time spend. This is why we just rename it to the service here so that we can get a nice
 	// overview of all resources belonging to the service. Can be removed in the future when datadog is changing things
 	converted.Name = converted.Service
-
-	// give it a short duration.
-	if converted.Duration == 0 {
-		converted.Duration = int64(10 * time.Millisecond)
-	}
 
 	// initialize history maps for span -> parent assignment
 	const parentLookupMapSize = 40000
@@ -303,26 +154,45 @@ func identifySpan(span *zipkincore.Span) string {
 	return name + span.Name
 }
 
-func dropDomainFromUrl(url string) string {
-	switch {
-	case strings.HasPrefix(url, "http://"):
-		index := strings.IndexRune(url[7:], '/')
-		return url[7+index:]
+var reHash = regexp.MustCompile("\\b(?:[a-f0-9]{32}|[a-f0-9]{24}|[a-f0-9-]{8}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{12})\\b")
+var reNumber = regexp.MustCompile("\\b[0-9]{2,}\\b")
 
-	case strings.HasPrefix(url, "https://"):
-		index := strings.IndexRune(url[8:], '/')
-		return url[8+index:]
+func SimplifyResourceName(value string) string {
+	// check if we need to apply the (costly) regexp by checking if a match is possible or not
+	digitCount := 0
+	hashCharCount := 0
+	for idx, char := range value {
+		isDigit := char >= '0' && char <= '9'
+		if isDigit {
+			digitCount++
+		}
+
+		if isDigit || char >= 'a' && char <= 'f' {
+			hashCharCount++
+		}
+		if char == '?' {
+			value = value[:idx]
+			break
+		}
 	}
 
-	return url
+	// only search for hash, if we have enough chars for it
+	if hashCharCount >= 24 {
+		value = reHash.ReplaceAllString(value, "_HASH_")
+	}
+
+	// only replace numbers, if we have enough digits for a match
+	if digitCount >= 2 {
+		value = reNumber.ReplaceAllString(value, "_NUMBER_")
+	}
+
+	return value
 }
 
-func iwgNameFromResource(resource string, fallback string) string {
-	splittedUrl := strings.Split(strings.Trim(resource, "/"), "/")
-	if len(splittedUrl) == 1 && splittedUrl[0] != "" {
-		return splittedUrl[0]
-	} else if len(splittedUrl) > 1 {
-		return splittedUrl[len(splittedUrl)-2] + "/" + splittedUrl[len(splittedUrl)-1]
+func RemoveQueryString(value string) string {
+	idx := strings.IndexByte(value, '?')
+	if idx >= 0 {
+		return value[:idx]
 	}
-	return fallback
+	return value
 }

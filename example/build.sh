@@ -8,8 +8,9 @@ if ! which glide 2> /dev/null ; then
 fi
 
 # format everything
-go fmt . ./datadog ./example ./zipkin
+go fmt *.go
 
 # install dependencies and build file
+cd ..
 glide install
-go build -a -o dd-zipkin-proxy ./example
+go build -a -o example/dd-zipkin-proxy ./example
