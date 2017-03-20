@@ -1,5 +1,5 @@
 hash: 05ba65f289d3de28790ce692707942477e0b0e40ce84a1dab10e438c810d9cdd
-updated: 2017-03-03T09:40:59.362161781Z
+updated: 2017-03-20T08:31:37.36983865Z
 imports:
 - name: github.com/apache/thrift
   version: 53dd39833a08ce33582e5ff31fa18bb4735d6731
@@ -69,7 +69,7 @@ imports:
 - name: github.com/Shopify/sarama
   version: 0fb560e5f7fbcaee2f75e3c34174320709f69944
 - name: github.com/Sirupsen/logrus
-  version: 0208149b40d863d2c1a2f8fe5753096a9cf2cc8b
+  version: ba1b36c82c5e05c4f912a88eab0dcd91a171688f
 - name: github.com/ugorji/go
   version: c88ee250d0221a57af388746f5cf03768c21d6e2
   subpackages:
