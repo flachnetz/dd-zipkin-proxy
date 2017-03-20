@@ -139,7 +139,7 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		}
 	}
 
-	extractInfoFromAnnotations(span, converted)
+	updateInfoFromAnnotations(span, converted)
 
 	// simplify some names
 	if strings.HasPrefix(converted.Name, "http:") {
@@ -260,7 +260,7 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 	return converted
 }
 
-func extractInfoFromAnnotations(span *zipkincore.Span, converted *tracer.Span) {
+func updateInfoFromAnnotations(span *zipkincore.Span, converted *tracer.Span) {
 	// try to get the service from the cs/cr or sr/ss annotations
 	var minTimestamp, maxTimestamp int64
 	for _, an := range span.Annotations {
@@ -277,7 +277,7 @@ func extractInfoFromAnnotations(span *zipkincore.Span, converted *tracer.Span) {
 		}
 	}
 
-	if converted.Start == 0 {
+	if converted.Start == 0 || converted.Duration == 0 {
 		logrus.Warnf("Span had no start/duration, guessing from annotations: %s", identifySpan(span))
 		converted.Start = 1000 * minTimestamp
 		converted.Duration = 1000 * (maxTimestamp - minTimestamp)
