@@ -12,4 +12,4 @@ go fmt . ./datadog ./example ./zipkin
 
 # install dependencies and build file
 glide install
-go build -o dd-zipkin-proxy ./example
+go build -a -o dd-zipkin-proxy ./example

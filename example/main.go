@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -246,6 +247,11 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 	// most of the time spend. This is why we just rename it to the service here so that we can get a nice
 	// overview of all resources belonging to the service. Can be removed in the future when datadog is changing things
 	converted.Name = converted.Service
+
+	// give it a short duration.
+	if converted.Duration == 0 {
+		converted.Duration = int64(10 * time.Millisecond)
+	}
 
 	// initialize history maps for span -> parent assignment
 	const parentLookupMapSize = 40000

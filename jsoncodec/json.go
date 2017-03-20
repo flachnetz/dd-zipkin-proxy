@@ -115,6 +115,7 @@ func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
 	return &zipkincore.Span{
 		TraceID: int64(span.TraceID),
 		ID:      int64(span.ID),
+		Name:    span.Name,
 
 		ParentID: (*int64)(span.ParentID),
 
