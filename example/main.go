@@ -69,7 +69,8 @@ type DefaultSpanConverter struct {
 }
 
 func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Span {
-	if span.Name == "watch-config-key-values" {
+	// ignore long running consul update tasks.
+	if span.Name == "watch-config-key-values" || span.Name == "catalog-services-watch" {
 		return nil
 	}
 
