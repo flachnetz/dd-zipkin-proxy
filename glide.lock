@@ -1,5 +1,5 @@
-hash: 05ba65f289d3de28790ce692707942477e0b0e40ce84a1dab10e438c810d9cdd
-updated: 2017-03-20T08:31:37.36983865Z
+hash: c7461f1d845e9a30cbe017dae5e40726b2e3f901bbfa1615e911bef6a4ae2ef5
+updated: 2017-03-29T21:32:35.750726072+02:00
 imports:
 - name: github.com/apache/thrift
   version: 53dd39833a08ce33582e5ff31fa18bb4735d6731
@@ -21,30 +21,34 @@ imports:
   version: bb955e01b9346ac19dc29eb16586c90ded99a98c
 - name: github.com/eapache/queue
   version: 44cc805cf13205b55f69e14bcb69867d1ae92f98
+- name: github.com/eSailors/go-datadog
+  version: f50ae93817c978b64e625eb5da655d59250fc05c
 - name: github.com/flachnetz/go-admin
   version: 8d781c5fd4118277fd23696221ed07aa7ec89eeb
 - name: github.com/go-logfmt/logfmt
   version: 390ab7935ee28ec6b286364bba9b4dd6410cb3d5
 - name: github.com/gogo/protobuf
-  version: 3ea128ab69017b2bb9720f38a32e2dcfc22c0546
+  version: 84af2615df1ba1d35cc975ba94b64ee67d6c196e
   subpackages:
   - proto
 - name: github.com/goji/httpauth
   version: 2da839ab0f4df05a6db5eb277995589dadbd4fb9
 - name: github.com/golang/snappy
-  version: 553a641470496b2327abcac10b36396bd98e45c9
+  version: d9eb7a3d35ec988b8585d4a0068e462c27d28380
 - name: github.com/gorilla/handlers
-  version: ee54c7b44cab12289237fb8631314790076e728b
+  version: 3a5767ca75ece5f7f1440b1d16975247f8d8b221
 - name: github.com/jessevdk/go-flags
   version: 8bc97d602c3bfeb5fc6fc9b5a9c898f245495637
 - name: github.com/julienschmidt/httprouter
   version: 8c199fb6259ffc1af525cc3ad52ee60ba8359669
 - name: github.com/kardianos/osext
-  version: 9b883c5eb462dd5cb1b0a7a104fe86bc6b9bd391
+  version: c2c54e542fb797ad986b31721e1baedf214ca413
 - name: github.com/klauspost/crc32
-  version: 1bab8b35b6bb565f92cbc97939610af9369f942a
+  version: cb6bfca970f6908083f26f39a79009d608efd5cd
 - name: github.com/kr/logfmt
   version: b84e30acd515aadc4b783ad4ff83aff3299bdfe0
+- name: github.com/mgutz/ansi
+  version: c286dcecd19ff979eeb73ea444e479b903f2cfcb
 - name: github.com/opentracing/opentracing-go
   version: 137bfcefd3340b28186f4fd3608719fcb120f98f
   subpackages:
@@ -64,6 +68,8 @@ imports:
   version: 5a004441f897722c627870a981d02b29924215fa
   subpackages:
   - xxHash32
+- name: github.com/pkg/errors
+  version: 645ef00459ed84a119197bfb8d8205042c6df63d
 - name: github.com/rcrowley/go-metrics
   version: 1f30fe9094a513ce4c700b9a54458bbb0c96996c
 - name: github.com/Shopify/sarama
@@ -71,17 +77,21 @@ imports:
 - name: github.com/Sirupsen/logrus
   version: ba1b36c82c5e05c4f912a88eab0dcd91a171688f
 - name: github.com/ugorji/go
-  version: c88ee250d0221a57af388746f5cf03768c21d6e2
+  version: 9c7f9b7a2bc3a520f7c7b30b34b7f85f47fe27b6
   subpackages:
   - codec
+- name: github.com/x-cray/logrus-prefixed-formatter
+  version: 9cd0cf058806896bf8ca66f9a957d36bd9e4ce0f
 - name: golang.org/x/net
-  version: 6b27048ae5e6ad1ef927e72e437531493de612fe
+  version: f315505cf3349909cdf013ea56690da34e96a451
   subpackages:
   - context
 - name: golang.org/x/sys
-  version: 075e574b89e4c2d22f2286a7e2b919519c6f3547
+  version: 8f0908ab3b2457e2e15403d3697c9ef5cb4b57a9
   subpackages:
   - unix
+- name: gopkg.in/tylerb/graceful.v1
+  version: 4654dfbb6ad53cb5e27f37d99b02e16c1872fbbb
 testImports:
 - name: github.com/onsi/gomega
   version: c463cd2a8578290d4be7a25cba69de81cf35785e
@@ -98,4 +108,4 @@ testImports:
   - matchers/support/goraph/util
   - types
 - name: gopkg.in/yaml.v2
-  version: a3f3340b5840cee44f372bddb5880fcbc419b46a
+  version: a5b47d31c556af34a302ce5d659e6fea44d90de0

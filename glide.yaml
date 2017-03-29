@@ -13,7 +13,7 @@ import:
 - package: github.com/julienschmidt/httprouter
   version: ~1.1.0
 - package: github.com/gorilla/handlers
-  version: ~1.1.0
+  version: ~1.2.0
 - package: github.com/jessevdk/go-flags
   version: ~1.1.0
 - package: github.com/Sirupsen/logrus
@@ -22,6 +22,16 @@ import:
   version: 137bfcefd3340b28186f4fd3608719fcb120f98f
 - package: github.com/flachnetz/go-admin
   version: ~1.4.0
+- package: github.com/rcrowley/go-metrics
+  version: master
+- package: github.com/x-cray/logrus-prefixed-formatter
+  version: ~0.3.2
+- package: github.com/eSailors/go-datadog
+  version: ~1.0.0
+- package: github.com/pkg/errors
+  version: ~0.8.0
+- package: gopkg.in/tylerb/graceful.v1
+  version: ~1.2.15
 testImport:
 - package: github.com/onsi/gomega
   version: c463cd2a8578290d4be7a25cba69de81cf35785e

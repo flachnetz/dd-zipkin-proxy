@@ -1,16 +1,11 @@
 package zipkinproxy
 
 import (
-	"bytes"
-	"compress/gzip"
-	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"time"
 
 	"github.com/Sirupsen/logrus"
-	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/flachnetz/dd-zipkin-proxy/datadog"
 	"github.com/flachnetz/dd-zipkin-proxy/zipkin"
 	"github.com/gorilla/handlers"
@@ -19,38 +14,67 @@ import (
 	"github.com/openzipkin/zipkin-go-opentracing"
 	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
 
-	"encoding/json"
-	"github.com/flachnetz/dd-zipkin-proxy/jsoncodec"
+	datadog2 "github.com/eSailors/go-datadog"
 	. "github.com/flachnetz/go-admin"
-	"sync"
+	"github.com/rcrowley/go-metrics"
+	"github.com/x-cray/logrus-prefixed-formatter"
+	"gopkg.in/tylerb/graceful.v1"
+	"strings"
 )
 
 var log = logrus.WithField("prefix", "main")
+
+var Metrics = metrics.NewPrefixedRegistry("zipkin.proxy.")
 
 func Main(spanConverter datadog.SpanConverterFunc) {
 	var opts struct {
 		ZipkinReporterUrl string `long:"zipkin-url" description:"Url for zipkin reporting."`
 		DatadogReporting  bool   `long:"datadog-reporting" description:"Enable datadog trace reporting with the default url."`
 		ListenAddr        string `long:"listen-address" default:":9411" description:"Address to listen for zipkin connections."`
-		Verbose           bool   `long:"verbose" description:"Enable verbose debug logging."`
+
+		Metrics struct {
+			DatadogApiKey string `long:"dd-apikey" description:"Provide the datadog api key to enable datadog metrics reporting."`
+			DatadogTags   string `long:"Comma separated list of tags to add the datadog metrics."`
+		} `namespace:"metrics" group:"Metrics configuration"`
+
+		Verbose bool `long:"verbose" description:"Enable verbose debug logging."`
 	}
 
-	if _, err := flags.Parse(&opts); err != nil {
+	// parse options with a "-" as separator.
+	parser := flags.NewParser(&opts, flags.Default)
+	parser.NamespaceDelimiter = "-"
+	if _, err := parser.Parse(); err != nil {
 		os.Exit(1)
 	}
+
+	// enable prefix logger for logrus
+	logrus.SetFormatter(&prefixed.TextFormatter{})
 
 	if opts.Verbose {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
+	if opts.Metrics.DatadogApiKey != "" {
+		// enable metrics logging
+		initializeMetrics()
+
+		// and metrics reporting
+		tags := strings.FieldsFunc(opts.Metrics.DatadogTags, isComma)
+		initializeDatadogReporting(opts.Metrics.DatadogApiKey, tags)
+	}
+
 	var channels []chan<- *zipkincore.Span
 
 	if opts.DatadogReporting {
-		// report spans to datadog
+		log.Info("Enable forwarding of spans to datadog trace-agent")
+
+		// accept zipkin spans
 		zipkinSpans := make(chan *zipkincore.Span, 512)
+		channels = append(channels, zipkinSpans)
+
+		// convert the zipkin spans to datadog spans.
 		datadogSpans := datadog.ConvertZipkinSpans(zipkinSpans, spanConverter)
 		go datadog.ReportSpans(datadogSpans)
-		channels = append(channels, zipkinSpans)
 	}
 
 	if opts.ZipkinReporterUrl != "" {
@@ -58,28 +82,33 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 
 		collector, err := zipkintracer.NewHTTPCollector(opts.ZipkinReporterUrl,
 			zipkintracer.HTTPBatchSize(5000),
-			zipkintracer.HTTPLogger(funcLogger(log.Warn)))
+			zipkintracer.HTTPLogger(funcLogger(logrus.WithField("prefix", "zipkin").Warn)))
 
 		if err != nil {
 			log.Fatal("Could not create zipkin http collector: ", err)
 			return
 		}
 
+		// accept zipkin spans
 		zipkinSpans := make(chan *zipkincore.Span, 512)
-		go zipkin.ReportSpans(collector, zipkinSpans)
 		channels = append(channels, zipkinSpans)
+
+		// forward them to another zipkin service.
+		go zipkin.ReportSpans(collector, zipkinSpans)
 	}
 
 	// a channel to store the last spans that were received
 	var buffer *SpansBuffer
 	{
 		zipkinSpans := make(chan *zipkincore.Span, 512)
+		channels = append(channels, zipkinSpans)
+
+		// just keep references to previous spans.
 		buffer = NewSpansBuffer(2048)
 		go buffer.ReadFrom(zipkinSpans)
-		channels = append(channels, zipkinSpans)
 	}
 
-	// multiplex channels
+	// multiplex input channel to all the target channels
 	zipkinSpans := make(chan *zipkincore.Span, 16)
 	go forwardSpansToChannels(zipkinSpans, channels)
 
@@ -87,22 +116,52 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	originalZipkinSpans := make(chan *zipkincore.Span, 1024)
 	go ErrorCorrectSpans(originalZipkinSpans, zipkinSpans)
 
+	// show a nice little admin page with information and stuff.
 	admin := NewAdminHandler("/admin", "dd-zipkin-proxy",
 		WithDefaults(),
 		WithForceGC(),
 		WithPProfHandlers(),
 		WithHeapDump(),
 
+		WithMetrics(Metrics),
+
 		Describe("A buffer of the previous traces (in openzipkin-format) in the order they were received.",
 			WithGenericValue("/spans", buffer.ToSlice)))
 
-	// listen for zipkin messages
 	router := httprouter.New()
 	registerAdminHandler(router, admin)
+
+	// we emulate the zipkin api
 	router.POST("/api/v1/spans", handleSpans(originalZipkinSpans))
 
-	log.Infof("Starting http server on %s", opts.ListenAddr)
-	log.Fatal(http.ListenAndServe(opts.ListenAddr, handlers.LoggingHandler(log.Logger.Writer(), router)))
+	// listen for zipkin messages on http api
+	if err := httpListen(opts.ListenAddr, router); err != nil {
+		log.Errorf("Could not start http server: %s", err)
+		return
+	}
+}
+
+func httpListen(addr string, handler http.Handler) error {
+	// add logging to requests
+	handler = handlers.LoggingHandler(logrus.WithField("prefix", "httpd").Writer(), handler)
+
+	// catch and log panics from the http handlers
+	handler = handlers.RecoveryHandler(
+		handlers.PrintRecoveryStack(true),
+		handlers.RecoveryLogger(logrus.StandardLogger().WithField("prefix", "httpd")),
+	)(handler)
+
+	log.Infof("Starting http server on %s now.", addr)
+	server := &graceful.Server{
+		Timeout: 10 * time.Second,
+		LogFunc: logrus.WithField("prefix", "httpd").Warnf,
+		Server: &http.Server{
+			Addr:    addr,
+			Handler: handler,
+		},
+	}
+
+	return server.ListenAndServe()
 }
 
 func registerAdminHandler(router *httprouter.Router, handler http.Handler) {
@@ -116,95 +175,38 @@ func registerAdminHandler(router *httprouter.Router, handler http.Handler) {
 }
 
 func forwardSpansToChannels(source <-chan *zipkincore.Span, targets []chan<- *zipkincore.Span) {
-	dropped := 0
-	lastLogMessageTime := time.Now()
-
 	for span := range source {
 		for _, target := range targets {
-			// send span, do not block if target is full
-			//select {
-			//case target <- span:
-			//default:
-			//	dropped += 1
-			//}
-
 			target <- span
 		}
-
-		if dropped > 0 && time.Now().Sub(lastLogMessageTime) > 1*time.Second {
-			log.Warnf("Dropped %d spans because a target buffer was full.", dropped)
-			dropped = 0
-			lastLogMessageTime = time.Now()
-		}
 	}
 }
 
-func handleSpans(spans chan<- *zipkincore.Span) httprouter.Handle {
-	return func(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
-		var bodyReader io.Reader = req.Body
-		if req.Header.Get("Content-Encoding") == "gzip" {
-			var err error
-			bodyReader, err = gzip.NewReader(bodyReader)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
+func initializeMetrics() {
+	metrics.RegisterRuntimeMemStats(metrics.DefaultRegistry)
+	go metrics.CaptureRuntimeMemStats(metrics.DefaultRegistry, 60*time.Second)
+}
+
+// Start metrics reporting to datadog. This starts a reporter that sends the
+// applications metrics once per minute to datadog if you provide a valid api key.
+func initializeDatadogReporting(apikey string, tags []string) {
+	if apikey != "" {
+		hostname := os.Getenv("HOSTNAME")
+		if hostname == "" {
+			hostname, _ = os.Hostname()
 		}
 
-		body, err := ioutil.ReadAll(bodyReader)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+		log.Debugf("Starting datadog reporting on hostname '%s' with tags: %s",
+			hostname, strings.Join(tags, ", "))
 
-		// parse with correct mime type
-		if req.Header.Get("Content-Type") == "application/json" {
-			err = parseSpansWithJSON(spans, body)
-		} else {
-			err = parseSpansWithThrift(spans, body)
-		}
-
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		} else {
-			w.WriteHeader(http.StatusNoContent)
-		}
+		client := datadog2.New(hostname, apikey)
+		go datadog2.Reporter(client, Metrics, tags).Start(1 * time.Minute)
 	}
 }
 
-func parseSpansWithJSON(spansChannel chan<- *zipkincore.Span, body []byte) error {
-	parsedSpans := []jsoncodec.Span{}
-	if err := json.Unmarshal(body, &parsedSpans); err != nil {
-		return err
-	}
-
-	// now convert to zipkin spans
-	for idx := range parsedSpans {
-		spansChannel <- parsedSpans[idx].ToZipkincoreSpan()
-	}
-
-	return nil
-}
-
-func parseSpansWithThrift(spansChannel chan<- *zipkincore.Span, body []byte) error {
-	transport := thrift.NewStreamTransportR(bytes.NewReader(body))
-	protocol := thrift.NewTBinaryProtocolTransport(transport)
-
-	_, size, err := protocol.ReadListBegin()
-	if err != nil {
-		return err
-	}
-
-	for idx := 0; idx < size; idx++ {
-		var span zipkincore.Span
-		if err := span.Read(protocol); err != nil {
-			return err
-		}
-
-		spansChannel <- &span
-	}
-
-	return protocol.ReadListEnd()
+// Returns true if the given rune is equal to a comma.
+func isComma(ch rune) bool {
+	return ch == ','
 }
 
 type funcLogger func(keyvals ...interface{})
@@ -212,38 +214,4 @@ type funcLogger func(keyvals ...interface{})
 func (fn funcLogger) Log(keyvals ...interface{}) error {
 	fn(keyvals...)
 	return nil
-}
-
-type SpansBuffer struct {
-	lock     sync.Mutex
-	position uint
-	spans    []*zipkincore.Span
-}
-
-func NewSpansBuffer(capacity uint) *SpansBuffer {
-	spans := make([]*zipkincore.Span, capacity)
-	return &SpansBuffer{spans: spans}
-}
-
-func (buffer *SpansBuffer) ReadFrom(spans <-chan *zipkincore.Span) {
-	for span := range spans {
-		buffer.lock.Lock()
-		buffer.spans[buffer.position] = span
-		buffer.position = (buffer.position + 1) % uint(len(buffer.spans))
-		buffer.lock.Unlock()
-	}
-}
-
-func (buffer *SpansBuffer) ToSlice() []jsoncodec.Span {
-	buffer.lock.Lock()
-	defer buffer.lock.Unlock()
-
-	var result []jsoncodec.Span
-	for _, span := range buffer.spans {
-		if span != nil {
-			result = append(result, jsoncodec.FromSpan(span))
-		}
-	}
-
-	return result
 }
