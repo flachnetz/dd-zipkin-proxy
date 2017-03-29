@@ -55,6 +55,42 @@ func TestMergeSpansInPlace_Annotations_Reverse(t *testing.T) {
 	Expect(firstSpan.Annotations[2].Value).To(Equal("first"))
 }
 
+func TestMergeSpansInPlace_BinaryAnnotations(t *testing.T) {
+	RegisterTestingT(t)
+
+	// this is the server span
+	firstSpan := &zipkincore.Span{}
+	firstSpan.Annotations = []*zipkincore.Annotation{{Value: "sr"}}
+	firstSpan.BinaryAnnotations = []*zipkincore.BinaryAnnotation{{Key: "first"}}
+
+	secondSpan := &zipkincore.Span{}
+	secondSpan.BinaryAnnotations = []*zipkincore.BinaryAnnotation{{Key: "second"}}
+
+	mergeSpansInPlace(firstSpan, secondSpan)
+
+	Expect(firstSpan.BinaryAnnotations).To(HaveLen(2))
+	Expect(firstSpan.BinaryAnnotations[0].Key).To(Equal("first"))
+	Expect(firstSpan.BinaryAnnotations[1].Key).To(Equal("second"))
+}
+
+func TestMergeSpansInPlace_BinaryAnnotations_Reverse(t *testing.T) {
+	RegisterTestingT(t)
+
+	firstSpan := &zipkincore.Span{}
+	firstSpan.BinaryAnnotations = []*zipkincore.BinaryAnnotation{{Key: "first"}}
+
+	// this is the server span
+	secondSpan := &zipkincore.Span{}
+	secondSpan.Annotations = []*zipkincore.Annotation{{Value: "sr"}}
+	secondSpan.BinaryAnnotations = []*zipkincore.BinaryAnnotation{{Key: "second"}}
+
+	mergeSpansInPlace(firstSpan, secondSpan)
+
+	Expect(firstSpan.BinaryAnnotations).To(HaveLen(2))
+	Expect(firstSpan.BinaryAnnotations[0].Key).To(Equal("second"))
+	Expect(firstSpan.BinaryAnnotations[1].Key).To(Equal("first"))
+}
+
 func TestCorrectTimings(t *testing.T) {
 	RegisterTestingT(t)
 
