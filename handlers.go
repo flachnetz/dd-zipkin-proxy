@@ -8,6 +8,7 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
 	"github.com/pkg/errors"
+	"github.com/rcrowley/go-metrics"
 	"io"
 	"net/http"
 )
@@ -29,9 +30,13 @@ func handleSpans(spans chan<- *zipkincore.Span) httprouter.Handle {
 		// parse with correct mime type
 		var err error
 		if req.Header.Get("Content-Type") == "application/json" {
-			err = parseSpansWithJSON(spans, bodyReader)
+			metrics.GetOrRegisterTimer("spans.receive[type:json]", Metrics).Time(func() {
+				err = parseSpansWithJSON(spans, bodyReader)
+			})
 		} else {
-			err = parseSpansWithThrift(spans, bodyReader)
+			metrics.GetOrRegisterTimer("spans.receive[type:thrift]", Metrics).Time(func() {
+				err = parseSpansWithThrift(spans, bodyReader)
+			})
 		}
 
 		if err != nil {
@@ -53,6 +58,9 @@ func parseSpansWithJSON(spansChannel chan<- *zipkincore.Span, body io.Reader) er
 		spansChannel <- parsedSpans[idx].ToZipkincoreSpan()
 	}
 
+	spanCount := int64(len(parsedSpans))
+	metrics.GetOrRegisterMeter("spans.parsed[type:json]", Metrics).Mark(spanCount)
+
 	return nil
 }
 
@@ -62,6 +70,10 @@ func parseSpansWithThrift(spansChannel chan<- *zipkincore.Span, body io.Reader) 
 	_, size, err := protocol.ReadListBegin()
 	if err != nil {
 		return errors.WithMessage(err, "Expect begin of list")
+	}
+
+	if size <= 0 || size > 32*1024 {
+		return errors.Errorf("Too many spans, handler will not try to read %d spans", size)
 	}
 
 	// allocate all spans at once in one big block of memory.
@@ -74,6 +86,8 @@ func parseSpansWithThrift(spansChannel chan<- *zipkincore.Span, body io.Reader) 
 
 		spansChannel <- &spans[idx]
 	}
+
+	metrics.GetOrRegisterMeter("spans.parsed[type:thrift]", Metrics).Mark(int64(size))
 
 	return errors.WithMessage(protocol.ReadListEnd(), "Could not read end of list")
 }

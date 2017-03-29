@@ -16,8 +16,6 @@ func main() {
 }
 
 type DefaultSpanConverter struct {
-	current  map[uint64]string
-	previous map[uint64]string
 }
 
 func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Span {
@@ -39,7 +37,7 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 		Sampled:  true,
 	}
 
-	// datadog traces use a trace of 0
+	// datadog traces use zero for a root span
 	if converted.ParentID == converted.SpanID {
 		converted.ParentID = 0
 	}
@@ -101,18 +99,9 @@ func (converter *DefaultSpanConverter) Convert(span *zipkincore.Span) *tracer.Sp
 
 	// if name and service differ than the overview page in datadog will only show the one with
 	// most of the time spend. This is why we just rename it to the service here so that we can get a nice
-	// overview of all resources belonging to the service. Can be removed in the future when datadog is changing things
+	// overview of all resources belonging to the service. Can be removed in the future
+	// when datadog is changing things
 	converted.Name = converted.Service
-
-	// initialize history maps for span -> parent assignment
-	const parentLookupMapSize = 40000
-	if len(converter.current) >= parentLookupMapSize || converter.current == nil {
-		converter.previous = converter.current
-		converter.current = make(map[uint64]string, parentLookupMapSize)
-	}
-
-	// remember the service for a short while
-	converter.current[converted.SpanID] = converted.Service
 
 	return converted
 }

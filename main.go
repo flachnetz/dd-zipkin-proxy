@@ -28,13 +28,13 @@ var Metrics = metrics.NewPrefixedRegistry("zipkin.proxy.")
 
 func Main(spanConverter datadog.SpanConverterFunc) {
 	var opts struct {
-		ZipkinReporterUrl string `long:"zipkin-url" description:"Url for zipkin reporting."`
+		ZipkinReporterUrl string `long:"zipkin-url" value-name:"URL" description:"Url for zipkin reporting."`
 		DatadogReporting  bool   `long:"datadog-reporting" description:"Enable datadog trace reporting with the default url."`
-		ListenAddr        string `long:"listen-address" default:":9411" description:"Address to listen for zipkin connections."`
+		ListenAddr        string `long:"listen-address" value-name:"ADDR" default:":9411" description:"Address to listen for zipkin connections."`
 
 		Metrics struct {
-			DatadogApiKey string `long:"dd-apikey" description:"Provide the datadog api key to enable datadog metrics reporting."`
-			DatadogTags   string `long:"Comma separated list of tags to add the datadog metrics."`
+			DatadogApiKey string `long:"dd-apikey" value-name:"KEY" description:"Provide the datadog api key to enable datadog metrics reporting."`
+			DatadogTags   string `long:"tags" value-name:"TAGS" description:"Comma separated list of tags to add the datadog metrics."`
 		} `namespace:"metrics" group:"Metrics configuration"`
 
 		Verbose bool `long:"verbose" description:"Enable verbose debug logging."`
@@ -183,8 +183,8 @@ func forwardSpansToChannels(source <-chan *zipkincore.Span, targets []chan<- *zi
 }
 
 func initializeMetrics() {
-	metrics.RegisterRuntimeMemStats(metrics.DefaultRegistry)
-	go metrics.CaptureRuntimeMemStats(metrics.DefaultRegistry, 60*time.Second)
+	metrics.RegisterRuntimeMemStats(Metrics)
+	go metrics.CaptureRuntimeMemStats(Metrics, 10*time.Second)
 }
 
 // Start metrics reporting to datadog. This starts a reporter that sends the

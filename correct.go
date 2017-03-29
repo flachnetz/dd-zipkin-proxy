@@ -3,11 +3,24 @@ package zipkinproxy
 import (
 	"github.com/Sirupsen/logrus"
 	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
+	"github.com/rcrowley/go-metrics"
 	"sort"
 	"time"
 )
 
 const bufferTime = 10 * time.Second
+
+var metricsSpansMerged metrics.Meter
+var metricsTracesCorrected metrics.Meter
+var metricsTracesFinished metrics.Meter
+var metricsTracesInflight metrics.Gauge
+
+func init() {
+	metricsSpansMerged = metrics.GetOrRegisterMeter("spans.merged", Metrics)
+	metricsTracesCorrected = metrics.GetOrRegisterMeter("traces.corrected", Metrics)
+	metricsTracesFinished = metrics.GetOrRegisterMeter("traces.finished", Metrics)
+	metricsTracesInflight = metrics.GetOrRegisterGauge("traces.partial.count", Metrics)
+}
 
 type tree struct {
 	// parent-id to span
@@ -109,9 +122,9 @@ func ErrorCorrectSpans(spanChannel <-chan *zipkincore.Span, output chan<- *zipki
 			trace.AddSpan(span)
 
 		case <-ticker.C:
+			metricsTracesInflight.Update(int64(len(traces)))
 			finishTraces(traces, output)
 		}
-
 	}
 }
 
@@ -134,6 +147,7 @@ func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
 		root := trace.Root()
 		if root != nil {
 			correctTreeTimings(trace, root, 0)
+			metricsTracesCorrected.Mark(1)
 		}
 
 		// send all the spans to the output channel
@@ -142,6 +156,8 @@ func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
 				output <- span
 			}
 		}
+
+		metricsTracesFinished.Mark(1)
 	}
 }
 
@@ -220,7 +236,7 @@ func mergeSpansInPlace(spanToUpdate *zipkincore.Span, newSpan *zipkincore.Span) 
 	// if the new span was send from a server then we want to priority the annotations
 	// of the client span. Becuase of this, we'll add the new spans annotations in front of
 	// the old spans annotations - sounds counter-intuitive?
-	// It is not, if you think of it as "the last value wins!" - like settings values in a map.
+	// It is not if you think of it as "the last value wins!" - like settings values in a map.
 	newSpanIsServer := hasAnnotation(newSpan, "sr")
 
 	// merge annotations
@@ -250,6 +266,8 @@ func mergeSpansInPlace(spanToUpdate *zipkincore.Span, newSpan *zipkincore.Span) 
 			spanToUpdate.BinaryAnnotations = append(spanToUpdate.BinaryAnnotations, newSpan.BinaryAnnotations...)
 		}
 	}
+
+	metricsSpansMerged.Mark(1)
 }
 
 func hasAnnotation(span *zipkincore.Span, name string) bool {
