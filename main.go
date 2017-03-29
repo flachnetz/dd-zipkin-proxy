@@ -19,6 +19,7 @@ import (
 	"github.com/rcrowley/go-metrics"
 	"github.com/x-cray/logrus-prefixed-formatter"
 	"gopkg.in/tylerb/graceful.v1"
+	"regexp"
 	"strings"
 )
 
@@ -34,7 +35,7 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 
 		Metrics struct {
 			DatadogApiKey string `long:"dd-apikey" value-name:"KEY" description:"Provide the datadog api key to enable datadog metrics reporting."`
-			DatadogTags   string `long:"tags" value-name:"TAGS" description:"Comma separated list of tags to add the datadog metrics."`
+			DatadogTags   string `long:"dd-tags" value-name:"TAGS" description:"Comma separated list of tags to add the datadog metrics."`
 		} `namespace:"metrics" group:"Metrics configuration"`
 
 		Verbose bool `long:"verbose" description:"Enable verbose debug logging."`
@@ -43,6 +44,7 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	// parse options with a "-" as separator.
 	parser := flags.NewParser(&opts, flags.Default)
 	parser.NamespaceDelimiter = "-"
+	configureEnvironmentVariables(parser.Group)
 	if _, err := parser.Parse(); err != nil {
 		os.Exit(1)
 	}
@@ -138,6 +140,19 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	if err := httpListen(opts.ListenAddr, router); err != nil {
 		log.Errorf("Could not start http server: %s", err)
 		return
+	}
+}
+
+func configureEnvironmentVariables(group *flags.Group) {
+	for _, gr := range group.Groups() {
+		configureEnvironmentVariables(gr)
+	}
+
+	expr := regexp.MustCompile("[^A-Z0-9]+")
+	for _, op := range group.Options() {
+
+		name := strings.ToUpper(op.LongNameWithNamespace())
+		op.EnvDefaultKey = "DDZK_" + expr.ReplaceAllString(name, "_")
 	}
 }
 
