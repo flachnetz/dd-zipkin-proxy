@@ -242,8 +242,8 @@ func mergeSpansInPlace(spanToUpdate *zipkincore.Span, newSpan *zipkincore.Span) 
 		if newSpanIsServer {
 			// prepend the new annotations to the spanToUpdate ones
 			spans := make([]*zipkincore.BinaryAnnotation, 0, len(spanToUpdate.BinaryAnnotations)+len(newSpan.BinaryAnnotations))
-			spans = append(spans, spanToUpdate.BinaryAnnotations...)
 			spans = append(spans, newSpan.BinaryAnnotations...)
+			spans = append(spans, spanToUpdate.BinaryAnnotations...)
 			spanToUpdate.BinaryAnnotations = spans
 
 		} else {
