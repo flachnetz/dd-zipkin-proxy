@@ -1,5 +1,5 @@
-hash: be058d9bb69817ae79de14dbb7236895923603b33a767079877a7e8d109a09cf
-updated: 2017-07-24T10:44:04.478750485Z
+hash: fe40fd1c1f91f18d79873da3abaa3dbe259f13aef14a2beead5af58704596012
+updated: 2017-07-24T11:06:58.471799574Z
 imports:
 - name: github.com/apache/thrift
   version: 53dd39833a08ce33582e5ff31fa18bb4735d6731
@@ -55,12 +55,12 @@ imports:
 - name: github.com/mgutz/ansi
   version: 9520e82c474b0a04dd04f8a40959027271bab992
 - name: github.com/opentracing/opentracing-go
-  version: 137bfcefd3340b28186f4fd3608719fcb120f98f
+  version: 1949ddbfd147afd4d964a9f00b24eb291e0e7c38
   subpackages:
   - ext
   - log
 - name: github.com/openzipkin/zipkin-go-opentracing
-  version: 594640b9ef7e5c994e8d9499359d693c032d738c
+  version: d88c90182f3fb514be54a1c7adc11a04d41c7da9
   subpackages:
   - _thrift/gen-go/scribe
   - _thrift/gen-go/zipkincore
