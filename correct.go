@@ -11,14 +11,18 @@ import (
 const bufferTime = 10 * time.Second
 
 var metricsSpansMerged metrics.Meter
-var metricsTracesCorrected metrics.Meter
 var metricsTracesFinished metrics.Meter
+var metricsTracesWithoutRoot metrics.Meter
+var metricsTracesTooLarge metrics.Meter
 var metricsTracesInflight metrics.Gauge
+var metricsTracesCorrected metrics.Meter
 
 func init() {
 	metricsSpansMerged = metrics.GetOrRegisterMeter("spans.merged", Metrics)
 	metricsTracesCorrected = metrics.GetOrRegisterMeter("traces.corrected", Metrics)
 	metricsTracesFinished = metrics.GetOrRegisterMeter("traces.finished", Metrics)
+	metricsTracesWithoutRoot = metrics.GetOrRegisterMeter("traces.noroot", Metrics)
+	metricsTracesTooLarge = metrics.GetOrRegisterMeter("traces.toolarge", Metrics)
 	metricsTracesInflight = metrics.GetOrRegisterGauge("traces.partial.count", Metrics)
 }
 
@@ -140,6 +144,7 @@ func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
 
 		if traceTooLarge {
 			logrus.Warnf("Trace with %d nodes is too large.", trace.nodeCount)
+			metricsTracesTooLarge.Mark(1)
 			continue
 		}
 
@@ -148,6 +153,11 @@ func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
 		if root != nil {
 			correctTreeTimings(trace, root, 0)
 			metricsTracesCorrected.Mark(1)
+		} else {
+			// we don't have a root, what now?
+			logrus.Warnf("No root for trace with %d spans", trace.nodeCount)
+			metricsTracesWithoutRoot.Mark(1)
+			continue
 		}
 
 		// send all the spans to the output channel
@@ -203,7 +213,7 @@ func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
 
 	if clientRecv != 0 && clientSent != 0 && serverRecv != 0 && serverSent != 0 {
 		screw := (serverRecv+serverSent)/2 - (clientRecv+clientSent)/2
-		log.Infof("Found time screw of %s between c=%s and s=%s for span '%s'",
+		log.Debugf("Found time screw of %s between c=%s and s=%s for span '%s'",
 			time.Duration(screw)*time.Microsecond,
 			clientService, serverService, node.Name)
 

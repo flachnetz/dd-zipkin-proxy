@@ -33,7 +33,7 @@ func submitTraces(transport tracer.Transport, spansByTrace <-chan map[uint64][]*
 
 		// if we got traces, send them!
 		if len(traces) > 0 {
-			log.Debugf("Sending %d spans in traces %d traces", count, len(traces))
+			log.Infof("Sending %d spans in traces %d traces", count, len(traces))
 
 			if logTraces {
 				val, _ := json.MarshalIndent(traces, "", "  ")
