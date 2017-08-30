@@ -1,13 +1,14 @@
 package main
 
 import (
+	"regexp"
+	"strconv"
+	"strings"
+
 	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/Sirupsen/logrus"
 	"github.com/flachnetz/dd-zipkin-proxy"
 	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
-	"regexp"
-	"strconv"
-	"strings"
 )
 
 func main() {
@@ -143,8 +144,8 @@ func identifySpan(span *zipkincore.Span) string {
 	return name + span.Name
 }
 
-var reHash = regexp.MustCompile("\\b(?:[a-f0-9]{32}|[a-f0-9]{24}|[a-f0-9-]{8}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{12})\\b")
-var reNumber = regexp.MustCompile("\\b[0-9]{2,}\\b")
+var reHash = regexp.MustCompile(`\b(?:[a-f0-9]{32}|[a-f0-9]{24}|[a-f0-9-]{8}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{4}-[a-f0-9-]{12})\b`)
+var reNumber = regexp.MustCompile(`b[0-9]{2,}\b`)
 
 func SimplifyResourceName(value string) string {
 	// check if we need to apply the (costly) regexp by checking if a match is possible or not
