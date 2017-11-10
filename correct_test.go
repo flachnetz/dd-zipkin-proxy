@@ -2,7 +2,7 @@ package zipkinproxy
 
 import (
 	. "github.com/onsi/gomega"
-	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
+	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"math/rand"
 	"testing"
 )

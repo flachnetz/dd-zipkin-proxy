@@ -1,9 +1,9 @@
 package zipkinproxy
 
 import (
-	"github.com/Sirupsen/logrus"
-	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
+	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"github.com/rcrowley/go-metrics"
+	"github.com/sirupsen/logrus"
 	"sort"
 	"time"
 )

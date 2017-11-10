@@ -2,7 +2,7 @@ package datadog
 
 import (
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
+	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 )
 
 type SpanConverterFunc func(span *zipkincore.Span) *tracer.Span

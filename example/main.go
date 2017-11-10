@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/Sirupsen/logrus"
 	"github.com/flachnetz/dd-zipkin-proxy"
-	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
+	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {

@@ -3,7 +3,7 @@ package datadog
 import (
 	"encoding/json"
 	"github.com/DataDog/dd-trace-go/tracer"
-	"github.com/Sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"os"
 	"time"
 )

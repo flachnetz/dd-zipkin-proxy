@@ -4,9 +4,10 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"github.com/apache/thrift/lib/go/thrift"
+	"github.com/flachnetz/dd-zipkin-proxy/cache"
 	"github.com/flachnetz/dd-zipkin-proxy/jsoncodec"
 	"github.com/julienschmidt/httprouter"
-	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
+	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"github.com/pkg/errors"
 	"github.com/rcrowley/go-metrics"
 	"io"
@@ -41,6 +42,9 @@ func handleSpans(spans chan<- *zipkincore.Span) httprouter.Handle {
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+
+			log.WithField("prefix", "parser").Warnf("Request failed with error: %s", err)
+
 		} else {
 			w.WriteHeader(http.StatusNoContent)
 		}
@@ -65,7 +69,8 @@ func parseSpansWithJSON(spansChannel chan<- *zipkincore.Span, body io.Reader) er
 }
 
 func parseSpansWithThrift(spansChannel chan<- *zipkincore.Span, body io.Reader) error {
-	protocol := thrift.NewTBinaryProtocolTransport(thrift.NewStreamTransportR(body))
+	protocol := cache.CachingProtocol{
+		TBinaryProtocol: thrift.NewTBinaryProtocolTransport(thrift.NewStreamTransportR(body))}
 
 	_, size, err := protocol.ReadListBegin()
 	if err != nil {

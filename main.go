@@ -5,16 +5,17 @@ import (
 	"os"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/flachnetz/dd-zipkin-proxy/datadog"
 	"github.com/flachnetz/dd-zipkin-proxy/zipkin"
 	"github.com/gorilla/handlers"
 	"github.com/jessevdk/go-flags"
 	"github.com/julienschmidt/httprouter"
 	"github.com/openzipkin/zipkin-go-opentracing"
-	"github.com/openzipkin/zipkin-go-opentracing/_thrift/gen-go/zipkincore"
+	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
+	"github.com/sirupsen/logrus"
 
 	datadog2 "github.com/eSailors/go-datadog"
+	"github.com/flachnetz/dd-zipkin-proxy/cache"
 	. "github.com/flachnetz/go-admin"
 	"github.com/rcrowley/go-metrics"
 	"github.com/x-cray/logrus-prefixed-formatter"
@@ -56,9 +57,9 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
+	initializeMetrics()
+
 	if opts.Metrics.DatadogApiKey != "" {
-		// enable metrics logging
-		initializeMetrics()
 
 		// and metrics reporting
 		tags := strings.FieldsFunc(opts.Metrics.DatadogTags, isComma)
@@ -200,6 +201,8 @@ func forwardSpansToChannels(source <-chan *zipkincore.Span, targets []chan<- *zi
 func initializeMetrics() {
 	metrics.RegisterRuntimeMemStats(Metrics)
 	go metrics.CaptureRuntimeMemStats(Metrics, 10*time.Second)
+
+	cache.RegisterCacheMetrics(Metrics)
 }
 
 // Start metrics reporting to datadog. This starts a reporter that sends the
