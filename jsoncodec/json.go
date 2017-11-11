@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/flachnetz/dd-zipkin-proxy/cache"
 	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"net"
 )
@@ -92,7 +93,7 @@ func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
 
 		for idx, annotation := range span.Annotations {
 			annotations[idx] = &zipkincore.Annotation{
-				Value:     annotation.Value,
+				Value:     cache.String(annotation.Value),
 				Timestamp: annotation.Timestamp,
 				Host:      endpointToZipkin(annotation.Endpoint),
 			}
@@ -105,8 +106,8 @@ func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
 
 		for idx, annotation := range span.BinaryAnnotations {
 			binaryAnnotations[idx] = &zipkincore.BinaryAnnotation{
-				Key:   annotation.Key,
-				Value: toBytes(annotation.Value),
+				Key:   cache.String(annotation.Key),
+				Value: toBytesCached(annotation.Value),
 				Host:  endpointToZipkin(annotation.Endpoint),
 			}
 		}
@@ -115,7 +116,7 @@ func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
 	return &zipkincore.Span{
 		TraceID: int64(span.TraceID),
 		ID:      int64(span.ID),
-		Name:    span.Name,
+		Name:    cache.String(span.Name),
 
 		ParentID: (*int64)(span.ParentID),
 
@@ -129,11 +130,11 @@ func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
 	}
 }
 
-func toBytes(i interface{}) []byte {
+func toBytesCached(i interface{}) []byte {
 	if str, ok := i.(string); ok {
-		return []byte(str)
+		return cache.ByteSlice([]byte(str))
 	} else {
-		return []byte(fmt.Sprintf("%v", i))
+		return cache.ByteSlice([]byte(fmt.Sprintf("%v", i)))
 	}
 }
 
@@ -167,7 +168,7 @@ func endpointToZipkin(endpoint *Endpoint) *zipkincore.Endpoint {
 
 	result := zipkincore.Endpoint{
 		Port:        int16(endpoint.Port),
-		ServiceName: endpoint.ServiceName,
+		ServiceName: cache.String(endpoint.ServiceName),
 	}
 
 	if endpoint.Ipv4 != nil {
@@ -176,7 +177,7 @@ func endpointToZipkin(endpoint *Endpoint) *zipkincore.Endpoint {
 	}
 
 	if endpoint.Ipv6 != nil {
-		result.Ipv6 = []byte(endpoint.Ipv6.To16())
+		result.Ipv6 = cache.ByteSlice([]byte(endpoint.Ipv6.To16()))
 	}
 
 	return &result

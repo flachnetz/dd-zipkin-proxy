@@ -69,8 +69,8 @@ func parseSpansWithJSON(spansChannel chan<- *zipkincore.Span, body io.Reader) er
 }
 
 func parseSpansWithThrift(spansChannel chan<- *zipkincore.Span, body io.Reader) error {
-	protocol := cache.CachingProtocol{
-		TBinaryProtocol: thrift.NewTBinaryProtocolTransport(thrift.NewStreamTransportR(body))}
+	pb := thrift.NewTBinaryProtocolTransport(thrift.NewStreamTransportR(body))
+	protocol := cache.NewProtocol(pb)
 
 	_, size, err := protocol.ReadListBegin()
 	if err != nil {

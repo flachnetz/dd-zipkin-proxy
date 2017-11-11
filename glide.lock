@@ -1,5 +1,5 @@
-hash: 852ec322458600983a9c960f9f03186b1028119032e1e236ca28916cbb34313f
-updated: 2017-11-10T21:07:38.548664806Z
+hash: 75d1093d3024c99d35576a2c56378338dc01d0fe252445b00cb0462510bf8eba
+updated: 2017-11-11T12:21:25.881643255Z
 imports:
 - name: github.com/apache/thrift
   version: 4f77ab8e296d64c57e6ea1c6e3f0f152bc7d6a3a
@@ -44,8 +44,6 @@ imports:
   version: 8c199fb6259ffc1af525cc3ad52ee60ba8359669
 - name: github.com/kardianos/osext
   version: ae77be60afb1dcacde03767a8c37337fad28ac14
-- name: github.com/karlseguin/ccache
-  version: a2d62155777b39595c825ed3824279e642a5db3c
 - name: github.com/klauspost/crc32
   version: bab58d77464aa9cf4e84200c3276da0831fe0c03
 - name: github.com/kr/logfmt

@@ -1,124 +1,162 @@
 package cache
 
 import (
+	"errors"
+	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/karlseguin/ccache"
 	"github.com/rcrowley/go-metrics"
-	"hash/fnv"
-	"strconv"
-	"sync/atomic"
-	"time"
+	"io"
+	"reflect"
 	"unsafe"
 )
 
-var binaryCache = ccache.New(ccache.Configure())
-var binaryCacheHit, binaryCacheMiss, binaryCacheConflict uint64
+var binaryCache = NewLRUCache(32 * 1024 * 1024)
+
+var metricHitCount = metrics.NewMeter()
+var metricMissCount = metrics.NewMeter()
+var metricValueSize = metrics.NewHistogram(metrics.NewUniformSample(1024 * 8))
+var metricReadBinarySize = metrics.NewHistogram(metrics.NewUniformSample(1024 * 8))
+
+var invalidDataLength = thrift.NewTProtocolExceptionWithType(thrift.INVALID_DATA, errors.New("invalid data length"))
 
 type CachingProtocol struct {
 	*thrift.TBinaryProtocol
+	trans   thrift.TRichTransport
+	scratch [1024]byte
 }
 
-var prefixString = []byte("s")
-var prefixBytes = []byte("b")
+func NewProtocol(p *thrift.TBinaryProtocol) *CachingProtocol {
+	ptr := reflect.ValueOf(p).Elem().FieldByName("trans").UnsafeAddr()
+	trans := *(*thrift.TRichTransport)(unsafe.Pointer(ptr))
 
-func (p CachingProtocol) ReadString() (string, error) {
-	value, err := p.TBinaryProtocol.ReadString()
+	return &CachingProtocol{
+		TBinaryProtocol: p,
+		trans:           trans,
+	}
+}
 
-	// try to de-duplicate the data.
+func (p *CachingProtocol) ReadString() (string, error) {
+	value, err := p.ReadBinary()
+
 	if err == nil && len(value) > 0 {
-		var key string
-		if len(value) < 16 {
-			key = value
-		} else {
-			key = cacheKeyForValue(prefixString, bytesOfString(value))
+		return byteSliceToString(value), nil
+
+	} else {
+		return "", err
+	}
+}
+
+func (p *CachingProtocol) ReadBinary() ([]byte, error) {
+	size, e := p.ReadI32()
+	if e != nil {
+		return nil, e
+	}
+
+	if size < 0 {
+		return nil, invalidDataLength
+	}
+
+	if uint64(size) > p.trans.RemainingBytes() {
+		return nil, invalidDataLength
+	}
+
+	metricReadBinarySize.Update(int64(size))
+
+	// we can try to read the data into our scratch space if possible
+	var err error
+	var buf []byte
+	if int(size) <= len(p.scratch) {
+		_, err = io.ReadFull(p.trans, p.scratch[:size])
+
+		if err == nil {
+			// cache the value directly from scratch, do a copy if needed
+			buf = byteSlice(true, p.scratch[:size])
 		}
 
-		item := binaryCache.Get(key)
-		if item != nil {
-			cachedValue, ok := item.Value().(string)
-			if ok && len(cachedValue) == len(value) {
-				atomic.AddUint64(&binaryCacheHit, 1)
-				value = cachedValue
+	} else {
+		// normal code for large buffers
+		buf = make([]byte, int(size))
+		_, err = io.ReadFull(p.trans, buf)
 
-			} else {
-				atomic.AddUint64(&binaryCacheConflict, 1)
-			}
-
-		} else {
-			atomic.AddUint64(&binaryCacheMiss, 1)
-			binaryCache.Set(key, value, 1*time.Hour)
+		// deduplicate
+		if err == nil && size > 0 {
+			buf = byteSlice(false, buf)
 		}
 	}
 
-	return value, err
+	return buf, thrift.NewTProtocolException(err)
 }
 
-func (p CachingProtocol) ReadBinary() ([]byte, error) {
-	value, err := p.TBinaryProtocol.ReadBinary()
+func String(str string) string {
+	bytes := stringToByteSlice(str)
+	return byteSliceToString(ByteSlice(bytes))
+}
 
-	// try to de-duplicate the data.
-	if err == nil && len(value) > 0 {
-		key := cacheKeyForValue(prefixBytes, value)
+func ByteSlice(value []byte) []byte {
+	return byteSlice(false, value)
+}
 
-		item := binaryCache.Get(key)
-		if item != nil {
-			cachedValue, ok := item.Value().([]byte)
-			if ok && len(cachedValue) == len(value) {
-				atomic.AddUint64(&binaryCacheHit, 1)
-				value = cachedValue
+func StringForByteSlice(value []byte) string {
+	value = byteSlice(true, value)
+	return byteSliceToString(value)
+}
 
-			} else {
-				atomic.AddUint64(&binaryCacheConflict, 1)
-			}
+func byteSlice(copyOnInsert bool, value []byte) []byte {
+	key := byteSliceToString(value)
 
-		} else {
-			atomic.AddUint64(&binaryCacheMiss, 1)
-			binaryCache.Set(key, value, 1*time.Hour)
-		}
+	cachedValue := binaryCache.Get(key)
+	if cachedValue != nil {
+		metricHitCount.Mark(1)
+		return cachedValue
 	}
 
-	return value, err
+	if copyOnInsert {
+		value = append([]byte(nil), value...)
+	}
+
+	metricMissCount.Mark(1)
+	binaryCache.Set(value)
+
+	fmt.Println("XXX", key)
+
+	return value
 }
 
-// Creates a
-func cacheKeyForValue(prefix []byte, data []byte) string {
-	h := fnv.New64()
-	h.Write(prefix)
-	h.Write(data)
-	return strconv.FormatUint(h.Sum64(), 36)
+// from runtime/string.go
+type stringStruct struct {
+	str unsafe.Pointer
+	len int
 }
 
 // Returns the content of the string as a byte slice. This uses unsafe magic
 // to not copy the backing data of the string into a new slice
-func bytesOfString(str string) []byte {
-	// from runtime/string.go
-	type stringStruct struct {
-		str unsafe.Pointer
-		len int
-	}
-
+func stringToByteSlice(str string) []byte {
 	p := (*stringStruct)(unsafe.Pointer(&str)).str
 	data := (*[0xffffff]byte)(p)
 	return data[:len(str)]
 }
 
+// Returns a string that shares the data with the given byte slice.
+func byteSliceToString(bytes []byte) string {
+	return *(*string)(unsafe.Pointer(&bytes))
+}
+
 func RegisterCacheMetrics(m metrics.Registry) {
-	metrics.NewRegisteredFunctionalGauge("binary.cache.hit.count", m, func() int64 {
-		return int64(atomic.LoadUint64(&binaryCacheHit))
-	})
-
-	metrics.NewRegisteredFunctionalGauge("binary.cache.miss.count", m, func() int64 {
-		return int64(atomic.LoadUint64(&binaryCacheMiss))
-	})
-
-	metrics.NewRegisteredFunctionalGauge("binary.cache.conflict.count", m, func() int64 {
-		return int64(atomic.LoadUint64(&binaryCacheConflict))
-	})
+	m.Register("binary.cache.hit.count", metricHitCount)
+	m.Register("binary.cache.miss.count", metricMissCount)
+	m.Register("binary.read.size", metricReadBinarySize)
 
 	metrics.NewRegisteredFunctionalGaugeFloat64("binary.cache.hit.rate", m, func() float64 {
-		hitCount := atomic.LoadUint64(&binaryCacheHit)
-		missCount := atomic.LoadUint64(&binaryCacheMiss)
-		conflictCount := atomic.LoadUint64(&binaryCacheConflict)
-		return float64(hitCount) / float64(hitCount+missCount+conflictCount)
+		hitCount := metricHitCount.Rate1()
+		missCount := metricMissCount.Rate1()
+		return 1000 * float64(hitCount) / float64(hitCount+missCount)
+	})
+
+	metrics.NewRegisteredFunctionalGauge("binary.cache.size", m, func() int64 {
+		return int64(binaryCache.Size())
+	})
+
+	metrics.NewRegisteredFunctionalGauge("binary.cache.count", m, func() int64 {
+		return int64(binaryCache.Count())
 	})
 }

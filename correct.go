@@ -15,6 +15,7 @@ var metricsTracesFinished metrics.Meter
 var metricsTracesWithoutRoot metrics.Meter
 var metricsTracesTooLarge metrics.Meter
 var metricsTracesInflight metrics.Gauge
+var metricsSpansInflight metrics.Gauge
 var metricsTracesCorrected metrics.Meter
 
 func init() {
@@ -24,6 +25,7 @@ func init() {
 	metricsTracesWithoutRoot = metrics.GetOrRegisterMeter("traces.noroot", Metrics)
 	metricsTracesTooLarge = metrics.GetOrRegisterMeter("traces.toolarge", Metrics)
 	metricsTracesInflight = metrics.GetOrRegisterGauge("traces.partial.count", Metrics)
+	metricsSpansInflight = metrics.GetOrRegisterGauge("traces.partial.span.count", Metrics)
 }
 
 type tree struct {
@@ -133,8 +135,12 @@ func ErrorCorrectSpans(spanChannel <-chan *zipkincore.Span, output chan<- *zipki
 }
 
 func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
+	var spanCount int64
+
 	deadline := time.Now().Add(-bufferTime)
 	for traceID, trace := range traces {
+		spanCount += int64(trace.nodeCount)
+
 		traceTooLarge := trace.nodeCount > 4096
 		if !traceTooLarge && trace.updated.After(deadline) {
 			continue
@@ -169,6 +175,8 @@ func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
 
 		metricsTracesFinished.Mark(1)
 	}
+
+	metricsSpansInflight.Update(spanCount)
 }
 
 func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
