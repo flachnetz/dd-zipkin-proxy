@@ -309,10 +309,14 @@ func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
 	//           |_sr_______|__________| ss
 
 	if clientRecv != 0 && clientSent != 0 && serverRecv != 0 && serverSent != 0 {
+		// screw in milliseconds
 		screw := (serverRecv+serverSent)/2 - (clientRecv+clientSent)/2
-		log.Debugf("Found time screw of %s between c=%s and s=%s for span '%s'",
-			time.Duration(screw)*time.Microsecond,
-			clientService, serverService, node.Name)
+
+		if screw > 10 {
+			log.Debugf("Found time screw of %s between c=%s and s=%s for span '%s'",
+				time.Duration(screw)*time.Microsecond,
+				clientService, serverService, node.Name)
+		}
 
 		// calculate the offset for children based on the fact, that
 		// sr must occur after cs and ss must occur before cr.
