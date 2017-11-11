@@ -2,13 +2,15 @@ package cache
 
 import (
 	"container/list"
+	"fmt"
 	"sync"
+	"unsafe"
 )
 
 type lruCache struct {
 	lock sync.Mutex
 
-	maxSize int
+	maxCount int
 
 	size  int
 	count int
@@ -22,11 +24,19 @@ type lruCacheItem struct {
 	value   []byte
 }
 
-func NewLRUCache(maxSize int) *lruCache {
+const itemOverhead = int(0 +
+	unsafe.Sizeof(lruCacheItem{}) + // the item in the map
+	unsafe.Sizeof(list.Element{}) + // the element in the list
+	unsafe.Sizeof(interface{}("")) + // the iface in the element
+	unsafe.Sizeof("") + // the value in the iface in the element
+	unsafe.Sizeof("")) // the key in the map
+
+func NewLRUCache(maxCount int) *lruCache {
+	fmt.Println(itemOverhead)
 	return &lruCache{
-		values:  make(map[string]lruCacheItem),
-		usage:   list.New(),
-		maxSize: maxSize,
+		values:   make(map[string]lruCacheItem),
+		usage:    list.New(),
+		maxCount: maxCount,
 	}
 }
 
@@ -75,7 +85,7 @@ func (c *lruCache) Set(value []byte) {
 }
 
 func (c *lruCache) ensureCacheSize() {
-	for c.size >= c.maxSize {
+	for c.count >= c.maxCount {
 		lru := c.usage.Back()
 		key := lru.Value.(string)
 
@@ -89,7 +99,7 @@ func (c *lruCache) ensureCacheSize() {
 
 func (c *lruCache) Size() int {
 	c.lock.Lock()
-	result := c.size
+	result := c.size + c.count*itemOverhead
 	c.lock.Unlock()
 
 	return result

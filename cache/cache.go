@@ -9,11 +9,10 @@ import (
 	"unsafe"
 )
 
-var binaryCache = NewLRUCache(32 * 1024 * 1024)
+var binaryCache = NewLRUCache(50000)
 
 var metricHitCount = metrics.NewMeter()
 var metricMissCount = metrics.NewMeter()
-var metricValueSize = metrics.NewHistogram(metrics.NewUniformSample(1024 * 8))
 var metricReadBinarySize = metrics.NewHistogram(metrics.NewUniformSample(1024 * 8))
 
 var invalidDataLength = thrift.NewTProtocolExceptionWithType(thrift.INVALID_DATA, errors.New("invalid data length"))
