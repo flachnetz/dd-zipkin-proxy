@@ -2,7 +2,6 @@ package cache
 
 import (
 	"errors"
-	"fmt"
 	"github.com/apache/thrift/lib/go/thrift"
 	"github.com/rcrowley/go-metrics"
 	"io"
@@ -116,8 +115,6 @@ func byteSlice(copyOnInsert bool, value []byte) []byte {
 
 	metricMissCount.Mark(1)
 	binaryCache.Set(value)
-
-	fmt.Println("XXX", key)
 
 	return value
 }

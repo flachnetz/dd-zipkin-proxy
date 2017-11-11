@@ -12,6 +12,7 @@ const bufferTime = 10 * time.Second
 
 var metricsSpansMerged metrics.Meter
 var metricsTracesFinished metrics.Meter
+var metricsTracesFinishedSize metrics.Histogram
 var metricsTracesWithoutRoot metrics.Meter
 var metricsTracesTooLarge metrics.Meter
 var metricsTracesInflight metrics.Gauge
@@ -26,6 +27,9 @@ func init() {
 	metricsTracesTooLarge = metrics.GetOrRegisterMeter("traces.toolarge", Metrics)
 	metricsTracesInflight = metrics.GetOrRegisterGauge("traces.partial.count", Metrics)
 	metricsSpansInflight = metrics.GetOrRegisterGauge("traces.partial.span.count", Metrics)
+
+	metricsTracesFinishedSize = metrics.GetOrRegisterHistogram("traces.finishedsize", Metrics,
+		metrics.NewUniformSample(1024))
 }
 
 type tree struct {
@@ -139,12 +143,15 @@ func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
 
 	deadline := time.Now().Add(-bufferTime)
 	for traceID, trace := range traces {
-		spanCount += int64(trace.nodeCount)
+		traceTooLarge := trace.nodeCount > 3*1024
+		updatedRecently := trace.updated.After(deadline)
 
-		traceTooLarge := trace.nodeCount > 4096
-		if !traceTooLarge && trace.updated.After(deadline) {
+		if !traceTooLarge && updatedRecently {
+			spanCount += int64(trace.nodeCount)
 			continue
 		}
+
+		metricsTracesFinishedSize.Update(int64(trace.nodeCount))
 
 		delete(traces, traceID)
 
@@ -176,7 +183,43 @@ func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
 		metricsTracesFinished.Mark(1)
 	}
 
+	const maxSpans = 100000
+	if spanCount > maxSpans {
+		discardSuspiciousTraces(traces, maxSpans)
+	}
+
 	metricsSpansInflight.Update(spanCount)
+}
+
+func discardSuspiciousTraces(trees map[int64]*tree, maxSpans int) {
+	var spanCount int
+
+	type trace struct {
+		*tree
+		id int64
+	}
+
+	traces := make([]trace, len(trees))
+	for id, tree := range trees {
+		traces = append(traces, trace{tree, id})
+		spanCount += int(tree.nodeCount)
+	}
+
+	// sort them descending by node count
+	sort.Slice(traces, func(i, j int) bool {
+		return traces[i].nodeCount > traces[j].nodeCount
+	})
+
+	// remove the traces with the most spans.
+	for _, trace := range traces {
+		if spanCount < maxSpans {
+			break
+		}
+
+		log.Warn("Too many spans, discarding trace %d with %d spans", trace.id, trace.nodeCount)
+		delete(trees, trace.id)
+		spanCount -= int(trace.nodeCount)
+	}
 }
 
 func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {

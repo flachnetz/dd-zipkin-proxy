@@ -2,7 +2,6 @@ package cache
 
 import (
 	"container/list"
-	"fmt"
 	"sync"
 )
 
@@ -82,8 +81,6 @@ func (c *lruCache) ensureCacheSize() {
 
 		c.usage.Remove(lru)
 		delete(c.values, key)
-
-		fmt.Println("XXX Removed lru value", lru.Value.(string))
 
 		c.count--
 		c.size -= len(key)
