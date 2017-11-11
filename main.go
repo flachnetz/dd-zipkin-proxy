@@ -51,7 +51,7 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	}
 
 	// enable prefix logger for logrus
-	logrus.SetFormatter(&prefixed.TextFormatter{})
+	logrus.SetFormatter(&prefixed.TextFormatter{FullTimestamp: true, ForceFormatting: true})
 
 	if opts.Verbose {
 		logrus.SetLevel(logrus.DebugLevel)
@@ -60,7 +60,6 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	initializeMetrics()
 
 	if opts.Metrics.DatadogApiKey != "" {
-
 		// and metrics reporting
 		tags := strings.FieldsFunc(opts.Metrics.DatadogTags, isComma)
 		initializeDatadogReporting(opts.Metrics.DatadogApiKey, tags)

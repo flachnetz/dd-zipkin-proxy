@@ -3,18 +3,19 @@ package zipkinproxy
 import (
 	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"github.com/rcrowley/go-metrics"
-	"github.com/sirupsen/logrus"
 	"sort"
 	"time"
 )
 
 const bufferTime = 10 * time.Second
+const maxSpans = 100000
 
 var metricsSpansMerged metrics.Meter
 var metricsTracesFinished metrics.Meter
 var metricsTracesFinishedSize metrics.Histogram
 var metricsTracesWithoutRoot metrics.Meter
 var metricsTracesTooLarge metrics.Meter
+var metricsTracesTooOld metrics.Meter
 var metricsTracesInflight metrics.Gauge
 var metricsSpansInflight metrics.Gauge
 var metricsTracesCorrected metrics.Meter
@@ -25,6 +26,7 @@ func init() {
 	metricsTracesFinished = metrics.GetOrRegisterMeter("traces.finished", Metrics)
 	metricsTracesWithoutRoot = metrics.GetOrRegisterMeter("traces.noroot", Metrics)
 	metricsTracesTooLarge = metrics.GetOrRegisterMeter("traces.toolarge", Metrics)
+	metricsTracesTooOld = metrics.GetOrRegisterMeter("traces.tooold", Metrics)
 	metricsTracesInflight = metrics.GetOrRegisterGauge("traces.partial.count", Metrics)
 	metricsSpansInflight = metrics.GetOrRegisterGauge("traces.partial.span.count", Metrics)
 
@@ -32,17 +34,22 @@ func init() {
 		metrics.NewUniformSample(1024))
 }
 
+type none struct{}
+
 type tree struct {
 	// parent-id to span
 	nodes     map[int64][]*zipkincore.Span
+	started   time.Time
 	updated   time.Time
 	nodeCount uint16
 }
 
 func newTree() *tree {
+	now := time.Now()
 	return &tree{
 		nodes:   make(map[int64][]*zipkincore.Span),
-		updated: time.Now(),
+		started: now,
+		updated: now,
 	}
 }
 
@@ -115,12 +122,21 @@ func ErrorCorrectSpans(spanChannel <-chan *zipkincore.Span, output chan<- *zipki
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
+	// blacklisted trace ids.
+	blacklistedTraces := map[int64]none{}
+
 	for {
 		select {
 		case span, ok := <-spanChannel:
 			// stream was closed, stop now
 			if !ok {
 				return
+			}
+
+			// check if trace is in black list
+			if _, ok := blacklistedTraces[span.TraceID]; ok {
+				log.Warnf("Trace is in blacklist.")
+				continue
 			}
 
 			trace := traces[span.TraceID]
@@ -132,21 +148,23 @@ func ErrorCorrectSpans(spanChannel <-chan *zipkincore.Span, output chan<- *zipki
 			trace.AddSpan(span)
 
 		case <-ticker.C:
-			metricsTracesInflight.Update(int64(len(traces)))
-			finishTraces(traces, output)
+			finishTraces(traces, blacklistedTraces, output)
 		}
 	}
 }
 
-func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
+func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<- *zipkincore.Span) {
 	var spanCount int64
 
-	deadline := time.Now().Add(-bufferTime)
+	deadlineUpdate := time.Now().Add(-bufferTime)
+	deadlineStarted := time.Now().Add(-5 * bufferTime)
+
 	for traceID, trace := range traces {
 		traceTooLarge := trace.nodeCount > 3*1024
-		updatedRecently := trace.updated.After(deadline)
+		updatedRecently := trace.updated.After(deadlineUpdate)
+		traceTooOld := trace.started.Before(deadlineStarted)
 
-		if !traceTooLarge && updatedRecently {
+		if !traceTooLarge && !traceTooOld && updatedRecently {
 			spanCount += int64(trace.nodeCount)
 			continue
 		}
@@ -156,8 +174,16 @@ func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
 		delete(traces, traceID)
 
 		if traceTooLarge {
-			logrus.Warnf("Trace with %d nodes is too large.", trace.nodeCount)
+			blacklist[traceID] = none{}
+			log.Warnf("Trace %d with %d nodes is too large.", traceID, trace.nodeCount)
 			metricsTracesTooLarge.Mark(1)
+			continue
+		}
+
+		if traceTooOld {
+			blacklist[traceID] = none{}
+			log.Warnf("Trace %d with %d nodes is too old", traceID, trace.nodeCount)
+			metricsTracesTooOld.Mark(1)
 			continue
 		}
 
@@ -168,7 +194,7 @@ func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
 			metricsTracesCorrected.Mark(1)
 		} else {
 			// we don't have a root, what now?
-			logrus.Warnf("No root for trace with %d spans", trace.nodeCount)
+			log.Warnf("No root for trace %d with %d spans", traceID, trace.nodeCount)
 			metricsTracesWithoutRoot.Mark(1)
 			continue
 		}
@@ -183,12 +209,25 @@ func finishTraces(traces map[int64]*tree, output chan<- *zipkincore.Span) {
 		metricsTracesFinished.Mark(1)
 	}
 
-	const maxSpans = 100000
+	// measure in-flight traces and spans
+	metricsSpansInflight.Update(spanCount)
+	metricsTracesInflight.Update(int64(len(traces)))
+
+	// remove largest traces if we have too many in-flight spans
 	if spanCount > maxSpans {
+		log.Warnf("There are currently %d in-flight spans, cleaning suspicious traces now", spanCount)
 		discardSuspiciousTraces(traces, maxSpans)
 	}
 
-	metricsSpansInflight.Update(spanCount)
+	// limit size of blacklist by removing random values
+	// iteration of maps in go is non-deterministic
+	for id := range blacklist {
+		if len(blacklist) < 1024 {
+			break
+		}
+
+		delete(blacklist, id)
+	}
 }
 
 func discardSuspiciousTraces(trees map[int64]*tree, maxSpans int) {
@@ -199,10 +238,15 @@ func discardSuspiciousTraces(trees map[int64]*tree, maxSpans int) {
 		id int64
 	}
 
-	traces := make([]trace, len(trees))
+	traces := make([]trace, 0, len(trees))
 	for id, tree := range trees {
 		traces = append(traces, trace{tree, id})
 		spanCount += int(tree.nodeCount)
+	}
+
+	// nothing to do here.
+	if spanCount < maxSpans {
+		return
 	}
 
 	// sort them descending by node count
@@ -210,13 +254,15 @@ func discardSuspiciousTraces(trees map[int64]*tree, maxSpans int) {
 		return traces[i].nodeCount > traces[j].nodeCount
 	})
 
+	log.Warnf("Need to discard about %d spans", spanCount-maxSpans)
+
 	// remove the traces with the most spans.
 	for _, trace := range traces {
 		if spanCount < maxSpans {
 			break
 		}
 
-		log.Warn("Too many spans, discarding trace %d with %d spans", trace.id, trace.nodeCount)
+		log.Warnf("Too many spans, discarding trace %d with %d spans", trace.id, trace.nodeCount)
 		delete(trees, trace.id)
 		spanCount -= int(trace.nodeCount)
 	}

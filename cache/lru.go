@@ -2,7 +2,6 @@ package cache
 
 import (
 	"container/list"
-	"fmt"
 	"sync"
 	"unsafe"
 )
@@ -32,7 +31,6 @@ const itemOverhead = int(0 +
 	unsafe.Sizeof("")) // the key in the map
 
 func NewLRUCache(maxCount int) *lruCache {
-	fmt.Println(itemOverhead)
 	return &lruCache{
 		values:   make(map[string]lruCacheItem),
 		usage:    list.New(),
