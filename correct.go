@@ -19,6 +19,7 @@ var metricsTracesTooOld metrics.Meter
 var metricsTracesInflight metrics.Gauge
 var metricsSpansInflight metrics.Gauge
 var metricsTracesCorrected metrics.Meter
+var metricsReceivedBlacklistedSpan metrics.Meter
 
 func init() {
 	metricsSpansMerged = metrics.GetOrRegisterMeter("spans.merged", Metrics)
@@ -29,6 +30,7 @@ func init() {
 	metricsTracesTooOld = metrics.GetOrRegisterMeter("traces.tooold", Metrics)
 	metricsTracesInflight = metrics.GetOrRegisterGauge("traces.partial.count", Metrics)
 	metricsSpansInflight = metrics.GetOrRegisterGauge("traces.partial.span.count", Metrics)
+	metricsReceivedBlacklistedSpan = metrics.GetOrRegisterMeter("blacklist.span.received", Metrics)
 
 	metricsTracesFinishedSize = metrics.GetOrRegisterHistogram("traces.finishedsize", Metrics,
 		metrics.NewUniformSample(1024))
@@ -135,7 +137,7 @@ func ErrorCorrectSpans(spanChannel <-chan *zipkincore.Span, output chan<- *zipki
 
 			// check if trace is in black list
 			if _, ok := blacklistedTraces[span.TraceID]; ok {
-				log.Warnf("Trace is in blacklist.")
+				metricsReceivedBlacklistedSpan.Mark(1)
 				continue
 			}
 
@@ -312,7 +314,7 @@ func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
 		// screw in milliseconds
 		screw := (serverRecv+serverSent)/2 - (clientRecv+clientSent)/2
 
-		if screw > 10 {
+		if screw > 25 {
 			log.Debugf("Found time screw of %s between c=%s and s=%s for span '%s'",
 				time.Duration(screw)*time.Microsecond,
 				clientService, serverService, node.Name)
@@ -345,7 +347,7 @@ func mergeSpansInPlace(spanToUpdate *zipkincore.Span, newSpan *zipkincore.Span) 
 	}
 
 	// if the new span was send from a server then we want to priority the annotations
-	// of the client span. Becuase of this, we'll add the new spans annotations in front of
+	// of the client span. Because of this, we'll add the new spans annotations in front of
 	// the old spans annotations - sounds counter-intuitive?
 	// It is not if you think of it as "the last value wins!" - like settings values in a map.
 	newSpanIsServer := hasAnnotation(newSpan, "sr")
