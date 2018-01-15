@@ -158,12 +158,14 @@ func configureEnvironmentVariables(group *flags.Group) {
 
 func httpListen(addr string, handler http.Handler) error {
 	// add logging to requests
-	handler = handlers.LoggingHandler(logrus.WithField("prefix", "httpd").Writer(), handler)
+	handler = handlers.LoggingHandler(logrus.
+		WithField("prefix", "httpd").
+		WriterLevel(logrus.DebugLevel), handler)
 
 	// catch and log panics from the http handlers
 	handler = handlers.RecoveryHandler(
 		handlers.PrintRecoveryStack(true),
-		handlers.RecoveryLogger(logrus.StandardLogger().WithField("prefix", "httpd")),
+		handlers.RecoveryLogger(logrus.WithField("prefix", "httpd")),
 	)(handler)
 
 	log.Infof("Starting http server on %s now.", addr)

@@ -162,7 +162,7 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 	deadlineStarted := time.Now().Add(-5 * bufferTime)
 
 	for traceID, trace := range traces {
-		traceTooLarge := trace.nodeCount > 3*1024
+		traceTooLarge := trace.nodeCount > 8*1024
 		updatedRecently := trace.updated.After(deadlineUpdate)
 		traceTooOld := trace.started.Before(deadlineStarted)
 
