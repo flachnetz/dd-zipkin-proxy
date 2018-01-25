@@ -108,7 +108,8 @@ func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
 			binaryAnnotations[idx] = &zipkincore.BinaryAnnotation{
 				Key:   cache.String(annotation.Key),
 				Value: toBytesCached(annotation.Value),
-				Host:  endpointToZipkin(annotation.Endpoint),
+				Host:  endpointToZipkin(annotation.Endpoint),				
+				AnnotationType: zipkincore.AnnotationType_STRING,
 			}
 		}
 	}
