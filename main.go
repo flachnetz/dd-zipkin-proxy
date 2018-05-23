@@ -22,6 +22,10 @@ import (
 	"gopkg.in/tylerb/graceful.v1"
 	"regexp"
 	"strings"
+
+	_ "github.com/apache/thrift/lib/go/thrift"
+	"github.com/DataDog/dd-trace-go/tracer"
+	"encoding/json"
 )
 
 var log = logrus.WithField("prefix", "main")
@@ -136,10 +140,33 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	// we emulate the zipkin api
 	router.POST("/api/v1/spans", handleSpans(originalZipkinSpans))
 
+	router.POST("/api/v1/debug", debugSpans(spanConverter))
+
 	// listen for zipkin messages on http api
 	if err := httpListen(opts.ListenAddr, router); err != nil {
 		log.Errorf("Could not start http server: %s", err)
 		return
+	}
+}
+
+func debugSpans(spanConverter datadog.SpanConverterFunc) httprouter.Handle {
+	return func(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
+		spansCh := make(chan *zipkincore.Span, 1024)
+
+		go func() {
+			defer close(spansCh)
+			handleSpans(spansCh)(noopResponseWriter{}, r, params)
+		}()
+
+		var ddSpans []*tracer.Span
+		for span := range spansCh {
+			ddSpan := spanConverter(span)
+			ddSpans = append(ddSpans, ddSpan)
+		}
+
+		// serialize those spans
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(ddSpans)
 	}
 }
 
@@ -233,4 +260,17 @@ type funcLogger func(keyvals ...interface{})
 func (fn funcLogger) Log(keyvals ...interface{}) error {
 	fn(keyvals...)
 	return nil
+}
+
+type noopResponseWriter struct{}
+
+func (noopResponseWriter) Header() http.Header {
+	return make(http.Header)
+}
+
+func (noopResponseWriter) Write(b []byte) (int, error) {
+	return len(b), nil
+}
+
+func (noopResponseWriter) WriteHeader(int) {
 }
