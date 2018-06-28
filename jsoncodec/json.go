@@ -11,13 +11,13 @@ import (
 	"net"
 )
 
-type Span struct {
+type SpanV1 struct {
 	TraceID  Id  `json:"traceId"`
 	ID       Id  `json:"id"`
 	ParentID *Id `json:"parentId"`
 
-	Annotations       []Annotation       `json:"annotations"`
-	BinaryAnnotations []BinaryAnnotation `json:"binaryAnnotations"`
+	Annotations       []AnnotationV1       `json:"annotations"`
+	BinaryAnnotations []BinaryAnnotationV1 `json:"binaryAnnotations"`
 
 	Name string `json:"name"`
 
@@ -27,13 +27,13 @@ type Span struct {
 	Duration  *int64 `json:"duration"`
 }
 
-type Annotation struct {
+type AnnotationV1 struct {
 	Timestamp int64     `json:"timestamp"`
 	Value     string    `json:"value"`
 	Endpoint  *Endpoint `json:"endpoint"`
 }
 
-type BinaryAnnotation struct {
+type BinaryAnnotationV1 struct {
 	Key      string      `json:"key"`
 	Value    interface{} `json:"value"`
 	Endpoint *Endpoint   `json:"endpoint"`
@@ -46,31 +46,35 @@ type Endpoint struct {
 	Port        uint16 `json:"port"`
 }
 
+type ZipkincoreSpaner interface {
+	ToZipkincoreSpan() *zipkincore.Span
+}
+
 type Id int64
 
 var _ json.Marshaler = new(Id)
 var _ json.Unmarshaler = new(Id)
 
-func FromSpan(span *zipkincore.Span) Span {
-	var annotations []Annotation
+func FromSpan(span *zipkincore.Span) SpanV1 {
+	var annotations []AnnotationV1
 	for _, an := range span.Annotations {
-		annotations = append(annotations, Annotation{
+		annotations = append(annotations, AnnotationV1{
 			Timestamp: an.Timestamp,
 			Value:     an.Value,
 			Endpoint:  endpointToJson(an.Host),
 		})
 	}
 
-	var binaryAnnotations []BinaryAnnotation
+	var binaryAnnotations []BinaryAnnotationV1
 	for _, an := range span.BinaryAnnotations {
-		binaryAnnotations = append(binaryAnnotations, BinaryAnnotation{
+		binaryAnnotations = append(binaryAnnotations, BinaryAnnotationV1{
 			Key:      an.Key,
 			Value:    string(an.Value),
 			Endpoint: endpointToJson(an.Host),
 		})
 	}
 
-	return Span{
+	return SpanV1{
 		TraceID:  Id(span.TraceID),
 		ID:       Id(span.ID),
 		ParentID: (*Id)(span.ParentID),
@@ -86,7 +90,7 @@ func FromSpan(span *zipkincore.Span) Span {
 	}
 }
 
-func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
+func (span *SpanV1) ToZipkincoreSpan() *zipkincore.Span {
 	var annotations []*zipkincore.Annotation
 	if len(span.Annotations) > 0 {
 		annotations = make([]*zipkincore.Annotation, len(span.Annotations))
@@ -106,12 +110,18 @@ func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
 
 		for idx, annotation := range span.BinaryAnnotations {
 			binaryAnnotations[idx] = &zipkincore.BinaryAnnotation{
-				Key:   cache.String(annotation.Key),
-				Value: toBytesCached(annotation.Value),
-				Host:  endpointToZipkin(annotation.Endpoint),				
+				Key:            cache.String(annotation.Key),
+				Value:          toBytesCached(annotation.Value),
+				Host:           endpointToZipkin(annotation.Endpoint),
 				AnnotationType: zipkincore.AnnotationType_STRING,
 			}
 		}
+	}
+
+	// in root spans the traceId equals the span id.
+	parentId := span.ParentID
+	if span.TraceID == span.ID {
+		parentId = nil
 	}
 
 	return &zipkincore.Span{
@@ -119,7 +129,7 @@ func (span *Span) ToZipkincoreSpan() *zipkincore.Span {
 		ID:      int64(span.ID),
 		Name:    cache.String(span.Name),
 
-		ParentID: (*int64)(span.ParentID),
+		ParentID: (*int64)(parentId),
 
 		Annotations:       annotations,
 		BinaryAnnotations: binaryAnnotations,

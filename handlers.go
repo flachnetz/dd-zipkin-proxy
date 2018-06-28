@@ -14,7 +14,7 @@ import (
 	"net/http"
 )
 
-func handleSpans(spans chan<- *zipkincore.Span) httprouter.Handle {
+func handleSpans(spans chan<- *zipkincore.Span, version int) httprouter.Handle {
 	return func(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 		var bodyReader io.Reader = req.Body
 
@@ -32,11 +32,15 @@ func handleSpans(spans chan<- *zipkincore.Span) httprouter.Handle {
 		var err error
 		if req.Header.Get("Content-Type") == "application/json" {
 			metrics.GetOrRegisterTimer("spans.receive[type:json]", Metrics).Time(func() {
-				err = parseSpansWithJSON(spans, bodyReader)
+				err = parseSpansWithJSON(spans, bodyReader, version)
 			})
 		} else {
 			metrics.GetOrRegisterTimer("spans.receive[type:thrift]", Metrics).Time(func() {
-				err = parseSpansWithThrift(spans, bodyReader)
+				if version == 1 {
+					err = parseSpansWithThrift(spans, bodyReader)
+				} else {
+					err = errors.New("only supports thrift v1")
+				}
 			})
 		}
 
@@ -51,15 +55,37 @@ func handleSpans(spans chan<- *zipkincore.Span) httprouter.Handle {
 	}
 }
 
-func parseSpansWithJSON(spansChannel chan<- *zipkincore.Span, body io.Reader) error {
-	parsedSpans := []jsoncodec.Span{}
-	if err := json.NewDecoder(body).Decode(&parsedSpans); err != nil {
-		return errors.WithMessage(err, "Could not parse list of spans from json")
+func parseSpansWithJSON(spansChannel chan<- *zipkincore.Span, body io.Reader, version int) error {
+	var parsedSpans []*zipkincore.Span
+
+	switch version {
+	case 1:
+		var parsedSpansV1 []jsoncodec.SpanV1
+		if err := json.NewDecoder(body).Decode(&parsedSpansV1); err != nil {
+			return errors.WithMessage(err, "Could not parse list of spans from json")
+		}
+
+		for _, span := range parsedSpansV1 {
+			parsedSpans = append(parsedSpans, span.ToZipkincoreSpan())
+		}
+
+	case 2:
+		var parsedSpansV2 []jsoncodec.SpanV2
+		if err := json.NewDecoder(body).Decode(&parsedSpansV2); err != nil {
+			return errors.WithMessage(err, "Could not parse list of spans from json")
+		}
+
+		for _, span := range parsedSpansV2 {
+			parsedSpans = append(parsedSpans, span.ToZipkincoreSpan())
+		}
+
+	default:
+		return errors.New("invalid version code")
 	}
 
 	// now convert to zipkin spans
 	for idx := range parsedSpans {
-		spansChannel <- parsedSpans[idx].ToZipkincoreSpan()
+		spansChannel <- parsedSpans[idx]
 	}
 
 	spanCount := int64(len(parsedSpans))

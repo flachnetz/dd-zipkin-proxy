@@ -26,11 +26,11 @@ func (buffer *SpansBuffer) ReadFrom(spans <-chan *zipkincore.Span) {
 	}
 }
 
-func (buffer *SpansBuffer) ToSlice() []jsoncodec.Span {
+func (buffer *SpansBuffer) ToSlice() []jsoncodec.SpanV1 {
 	buffer.lock.Lock()
 	defer buffer.lock.Unlock()
 
-	var result []jsoncodec.Span
+	var result []jsoncodec.SpanV1
 	for _, span := range buffer.spans {
 		if span != nil {
 			result = append(result, jsoncodec.FromSpan(span))

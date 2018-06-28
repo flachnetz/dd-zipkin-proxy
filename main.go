@@ -23,9 +23,9 @@ import (
 	"regexp"
 	"strings"
 
-	_ "github.com/apache/thrift/lib/go/thrift"
-	"github.com/DataDog/dd-trace-go/tracer"
 	"encoding/json"
+	"github.com/DataDog/dd-trace-go/tracer"
+	_ "github.com/apache/thrift/lib/go/thrift"
 )
 
 var log = logrus.WithField("prefix", "main")
@@ -138,9 +138,11 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	registerAdminHandler(router, admin)
 
 	// we emulate the zipkin api
-	router.POST("/api/v1/spans", handleSpans(originalZipkinSpans))
+	router.POST("/api/v1/spans", handleSpans(originalZipkinSpans, 1))
+	router.POST("/api/v2/spans", handleSpans(originalZipkinSpans, 2))
 
-	router.POST("/api/v1/debug", debugSpans(spanConverter))
+	router.POST("/api/v1/debug", debugSpans(spanConverter, 1))
+	router.POST("/api/v2/debug", debugSpans(spanConverter, 2))
 
 	// listen for zipkin messages on http api
 	if err := httpListen(opts.ListenAddr, router); err != nil {
@@ -149,13 +151,13 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	}
 }
 
-func debugSpans(spanConverter datadog.SpanConverterFunc) httprouter.Handle {
+func debugSpans(spanConverter datadog.SpanConverterFunc, version int) httprouter.Handle {
 	return func(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
 		spansCh := make(chan *zipkincore.Span, 1024)
 
 		go func() {
 			defer close(spansCh)
-			handleSpans(spansCh)(noopResponseWriter{}, r, params)
+			handleSpans(spansCh, version)(noopResponseWriter{}, r, params)
 		}()
 
 		var ddSpans []*tracer.Span
