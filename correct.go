@@ -155,7 +155,7 @@ func (tree *tree) Roots() []*zipkincore.Span {
 	// now select all nodes with no parent
 	var candidates []*zipkincore.Span
 	for _, node := range byId {
-		if _, ok := byId[node.ID]; !ok {
+		if _, ok := byId[node.GetParentID()]; !ok {
 			candidates = append(candidates, node)
 		}
 	}
