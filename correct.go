@@ -5,6 +5,7 @@ import (
 	"github.com/rcrowley/go-metrics"
 	"sort"
 	"time"
+	"strings"
 )
 
 const bufferTime = 10 * time.Second
@@ -118,6 +119,44 @@ func (tree *tree) ChildrenOf(span *zipkincore.Span) []*zipkincore.Span {
 	return tree.nodes[span.ID]
 }
 
+// gets the parent of the given span in this tree.
+func (tree *tree) ParentOf(span *zipkincore.Span) *zipkincore.Span {
+	parentId := span.ParentID
+	if parentId == nil {
+		return nil
+	}
+
+	for _, nodes := range tree.nodes {
+		for _, node := range nodes {
+			if *parentId == node.ID {
+				return node
+			}
+		}
+	}
+
+	return nil
+}
+
+func (tree *tree) GuessRoot() *zipkincore.Span {
+	var root, currentNode *zipkincore.Span
+
+	// get any node from the tree
+	for _, nodes := range tree.nodes {
+		for _, node := range nodes {
+			currentNode = node
+			break
+		}
+	}
+
+	// walk the chain up to the "root"
+	for currentNode != nil {
+		root = currentNode
+		currentNode = tree.ParentOf(currentNode)
+	}
+
+	return root
+}
+
 func ErrorCorrectSpans(spanChannel <-chan *zipkincore.Span, output chan<- *zipkincore.Span) {
 	traces := make(map[int64]*tree)
 
@@ -178,6 +217,8 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 		if traceTooLarge {
 			blacklist[traceID] = none{}
 			log.Warnf("Trace %d with %d nodes is too large.", traceID, trace.nodeCount)
+			debugPrintTrace(trace)
+
 			metricsTracesTooLarge.Mark(1)
 			continue
 		}
@@ -185,6 +226,8 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 		if traceTooOld {
 			blacklist[traceID] = none{}
 			log.Warnf("Trace %d with %d nodes is too old", traceID, trace.nodeCount)
+			debugPrintTrace(trace)
+
 			metricsTracesTooOld.Mark(1)
 			continue
 		}
@@ -197,6 +240,8 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 		} else {
 			// we don't have a root, what now?
 			log.Warnf("No root for trace %d with %d spans", traceID, trace.nodeCount)
+			debugPrintTrace(trace)
+
 			metricsTracesWithoutRoot.Mark(1)
 			continue
 		}
@@ -230,6 +275,49 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 
 		delete(blacklist, id)
 	}
+}
+
+func debugPrintTrace(trace *tree) {
+	const maxLevel = 6
+	const maxChildCount = 32
+
+	root := trace.Root()
+	if root == nil {
+		root = trace.GuessRoot()
+	}
+
+	if root == nil {
+		return
+	}
+
+	var printNode func(*zipkincore.Span, int)
+
+	printNode = func(node *zipkincore.Span, level int) {
+		space := strings.Repeat("  ", level)
+
+		log.Warnf("%s%s [%x] (%s, %s)", space, node.Name, node.ID,
+			time.Unix(0, node.GetTimestamp()*int64(time.Microsecond)),
+			time.Duration(node.GetDuration())*time.Microsecond)
+
+		children := trace.ChildrenOf(node)
+		for idx, child := range children {
+			if level == maxLevel {
+				log.Warnf("%s  [...]")
+				break
+			}
+
+			if idx == maxChildCount {
+				log.Warnf("%s  [... %d more children]", space, len(children)-maxChildCount+1)
+				break
+			}
+
+			printNode(child, level+1)
+		}
+	}
+
+	log.Warnf("Trace %x, %d nodes, has root: %v", root.TraceID, trace.nodeCount, trace.Root() != nil)
+	printNode(root, 0)
+	log.Warnln()
 }
 
 func discardSuspiciousTraces(trees map[int64]*tree, maxSpans int) {
