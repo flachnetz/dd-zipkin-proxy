@@ -6,7 +6,6 @@ import (
 	"sort"
 	"time"
 	"strings"
-	"expvar"
 )
 
 const bufferTime = 10 * time.Second
@@ -284,19 +283,9 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 	}
 }
 
-var debugPrintTraceVar expvar.String
-
-func init() {
-	expvar.Publish("debugPrintTrace", &debugPrintTraceVar)
-}
-
 func debugPrintTrace(trace *tree) {
 	const maxLevel = 6
 	const maxChildCount = 32
-
-	if debugPrintTraceVar.Value() != "true" {
-		return
-	}
 
 	roots := trace.Roots()
 	if len(roots) == 0 {
