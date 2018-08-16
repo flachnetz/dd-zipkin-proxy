@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 	"strings"
+	"expvar"
 )
 
 const bufferTime = 10 * time.Second
@@ -137,24 +138,30 @@ func (tree *tree) ParentOf(span *zipkincore.Span) *zipkincore.Span {
 	return nil
 }
 
-func (tree *tree) GuessRoot() *zipkincore.Span {
-	var root, currentNode *zipkincore.Span
+func (tree *tree) Roots() []*zipkincore.Span {
+	// we can quickly detect if we only have a single root
+	if root := tree.Root(); root != nil {
+		return []*zipkincore.Span{root}
+	}
 
-	// get any node from the tree
+	byId := map[int64]*zipkincore.Span{}
+
+	// map nodes by id
 	for _, nodes := range tree.nodes {
 		for _, node := range nodes {
-			currentNode = node
-			break
+			byId[node.ID] = node
 		}
 	}
 
-	// walk the chain up to the "root"
-	for currentNode != nil {
-		root = currentNode
-		currentNode = tree.ParentOf(currentNode)
+	// now select all nodes with no parent
+	var candidates []*zipkincore.Span
+	for _, node := range byId {
+		if _, ok := byId[node.ID]; !ok {
+			candidates = append(candidates, node)
+		}
 	}
 
-	return root
+	return candidates
 }
 
 func ErrorCorrectSpans(spanChannel <-chan *zipkincore.Span, output chan<- *zipkincore.Span) {
@@ -277,16 +284,22 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 	}
 }
 
+var debugPrintTraceVar expvar.String
+
+func init() {
+	expvar.Publish("debugPrintTrace", &debugPrintTraceVar)
+}
+
 func debugPrintTrace(trace *tree) {
 	const maxLevel = 6
 	const maxChildCount = 32
 
-	root := trace.Root()
-	if root == nil {
-		root = trace.GuessRoot()
+	if debugPrintTraceVar.Value() != "true" {
+		return
 	}
 
-	if root == nil {
+	roots := trace.Roots()
+	if len(roots) == 0 {
 		return
 	}
 
@@ -315,8 +328,11 @@ func debugPrintTrace(trace *tree) {
 		}
 	}
 
-	log.Warnf("Trace %x, %d nodes, has root: %v", root.TraceID, trace.nodeCount, trace.Root() != nil)
-	printNode(root, 0)
+	for idx, root := range roots {
+		log.Warnf("Trace %x, root #%d", roots[0].TraceID, idx)
+		printNode(root, 0)
+	}
+
 	log.Warnln()
 }
 
