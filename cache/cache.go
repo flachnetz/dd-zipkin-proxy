@@ -128,12 +128,20 @@ type stringStruct struct {
 // to not copy the backing data of the string into a new slice
 func stringToByteSlice(str string) []byte {
 	p := (*stringStruct)(unsafe.Pointer(&str)).str
+	if p == nil {
+		return nil
+	}
+
 	data := (*[0xffffff]byte)(p)
 	return data[:len(str)]
 }
 
 // Returns a string that shares the data with the given byte slice.
 func byteSliceToString(bytes []byte) string {
+	if bytes == nil {
+		return ""
+	}
+
 	return *(*string)(unsafe.Pointer(&bytes))
 }
 

@@ -4,8 +4,8 @@ import (
 	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"github.com/rcrowley/go-metrics"
 	"sort"
-	"time"
 	"strings"
+	"time"
 )
 
 const bufferTime = 10 * time.Second
