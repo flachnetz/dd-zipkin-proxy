@@ -1,0 +1,42 @@
+module github.com/flachnetz/dd-zipkin-proxy
+
+require (
+	github.com/DataDog/dd-trace-go v0.6.1
+	github.com/Shopify/sarama v1.11.0
+	github.com/apache/thrift v0.0.0-20180517082609-88591e32e710
+	github.com/davecgh/go-spew v0.0.0-20170711183451-adab96458c51
+	github.com/eSailors/go-datadog v0.0.0-20170317191432-289f416d3143
+	github.com/eapache/go-resiliency v0.0.0-20170607163615-b1fe83b5b03f
+	github.com/eapache/go-xerial-snappy v0.0.0-20160609142408-bb955e01b934
+	github.com/eapache/queue v1.1.0
+	github.com/flachnetz/go-admin v0.0.0-20171110102317-273ae75d90fb
+	github.com/go-logfmt/logfmt v0.3.0
+	github.com/gogo/protobuf v0.0.0-20170731182949-98066786c62c
+	github.com/goji/httpauth v0.0.0-20160601135302-2da839ab0f4d
+	github.com/golang/snappy v0.0.0-20170215233205-553a64147049
+	github.com/gorilla/handlers v1.3.0
+	github.com/jessevdk/go-flags v1.4.0
+	github.com/julienschmidt/httprouter v0.0.0-20150421170007-8c199fb6259f
+	github.com/kardianos/osext v0.0.0-20170510131534-ae77be60afb1
+	github.com/klauspost/crc32 v0.0.0-20170628072449-bab58d77464a
+	github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515
+	github.com/mattn/go-colorable v0.0.0-20170210172801-5411d3eea597
+	github.com/mattn/go-isatty v0.0.0-20170307163044-57fdcb988a5c
+	github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b
+	github.com/onsi/gomega v0.0.0-20170214000320-c463cd2a8578
+	github.com/opentracing-contrib/go-observer v0.0.0-20170622124052-a52f23424492
+	github.com/opentracing/opentracing-go v1.0.2
+	github.com/openzipkin/zipkin-go-opentracing v0.3.4
+	github.com/pierrec/lz4 v0.0.0-20170519170625-5a3d2245f97f
+	github.com/pierrec/xxHash v0.0.0-20170714082455-a0006b13c722
+	github.com/pkg/errors v0.8.0
+	github.com/rcrowley/go-metrics v0.0.0-20170512050240-ff4b9a81db61
+	github.com/sirupsen/logrus v1.0.5
+	github.com/ugorji/go v0.0.0-20161130061742-9c7f9b7a2bc3
+	github.com/x-cray/logrus-prefixed-formatter v0.5.2
+	golang.org/x/crypto v0.0.0-20150531185727-c10c31b5e94b
+	golang.org/x/net v0.0.0-20170726083632-f5079bd7f6f7
+	golang.org/x/sys v0.0.0-20170803140359-d8f5ea21b929
+	gopkg.in/tylerb/graceful.v1 v1.2.15
+	gopkg.in/yaml.v2 v2.0.0-20170721122051-25c4ec802a7d
+)
