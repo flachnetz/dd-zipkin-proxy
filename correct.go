@@ -297,9 +297,10 @@ func debugPrintTrace(trace *tree) {
 	printNode = func(node *zipkincore.Span, level int) {
 		space := strings.Repeat("  ", level)
 
-		log.Warnf("%s%s [%x] (%s, %s)", space, node.Name, node.ID,
+		log.Warnf("%s%s [%x] (%s, %s, parent=%x)", space, node.Name, node.ID,
 			time.Unix(0, node.GetTimestamp()*int64(time.Microsecond)),
-			time.Duration(node.GetDuration())*time.Microsecond)
+			time.Duration(node.GetDuration())*time.Microsecond,
+			node.GetParentID())
 
 		children := trace.ChildrenOf(node)
 		for idx, child := range children {

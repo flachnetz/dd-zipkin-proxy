@@ -84,8 +84,9 @@ func parseSpansWithJSON(spansChannel chan<- *zipkincore.Span, body io.Reader, ve
 	}
 
 	// now convert to zipkin spans
-	for idx := range parsedSpans {
-		spansChannel <- parsedSpans[idx]
+	for _, span := range parsedSpans {
+		// log.Debugf("GOT SPAN: %s (id=%x, parent=%x)", span.Name, span.GetID(), span.GetParentID())
+		spansChannel <- span
 	}
 
 	spanCount := int64(len(parsedSpans))
@@ -107,15 +108,14 @@ func parseSpansWithThrift(spansChannel chan<- *zipkincore.Span, body io.Reader) 
 		return errors.Errorf("Too many spans, handler will not try to read %d spans", size)
 	}
 
-	// allocate all spans at once in one big block of memory.
-	spans := make([]zipkincore.Span, size)
-
 	for idx := 0; idx < size; idx++ {
-		if err := spans[idx].Read(protocol); err != nil {
+		var span zipkincore.Span
+		if err := span.Read(protocol); err != nil {
 			return errors.WithMessage(err, "Could not read thrift encoded span")
 		}
 
-		spansChannel <- &spans[idx]
+		// log.Debugf("GOT SPAN: %s (id=%x, parent=%x)", span.Name, span.GetID(), span.GetParentID())
+		spansChannel <- &span
 	}
 
 	metrics.GetOrRegisterMeter("spans.parsed[type:thrift]", Metrics).Mark(int64(size))
