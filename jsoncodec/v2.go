@@ -42,6 +42,8 @@ func (span *SpanV2) ToZipkincoreSpan() *zipkincore.Span {
 		parentId = nil
 	}
 
+	times := [2]int64{span.Timestamp, span.Duration}
+
 	return &zipkincore.Span{
 		TraceID: int64(span.TraceID),
 		ID:      int64(span.ID),
@@ -52,7 +54,7 @@ func (span *SpanV2) ToZipkincoreSpan() *zipkincore.Span {
 		Annotations:       annotations,
 		BinaryAnnotations: binaryAnnotations,
 
-		Timestamp: &span.Timestamp,
-		Duration:  &span.Duration,
+		Timestamp: &times[0],
+		Duration:  &times[1],
 	}
 }
