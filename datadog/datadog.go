@@ -15,8 +15,8 @@ const flushInterval = 2 * time.Second
 const flushSpanCount = 10000
 
 // Create a new default transport.
-func defaultTransport() tracer.Transport {
-	return tracer.NewTransport("", "")
+func defaultTransport(hostname, port string) tracer.Transport {
+	return tracer.NewTransport(hostname, port)
 }
 
 func submitTraces(transport tracer.Transport, spansByTrace <-chan map[uint64][]*tracer.Span) {
@@ -90,7 +90,7 @@ func sendSpansUsingTransport(transport tracer.Transport, spans <-chan *tracer.Sp
 
 // Reports all spans written to the provided channel. This method
 // blocks until the channel is closed, so better call it in a go routine.
-func ReportSpans(spans <-chan *tracer.Span) {
-	transport := defaultTransport()
+func ReportSpans(spans <-chan *tracer.Span, hostname, port string) {
+	transport := defaultTransport(hostname, port)
 	sendSpansUsingTransport(transport, spans)
 }

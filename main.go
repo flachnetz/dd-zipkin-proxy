@@ -37,6 +37,12 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 		ZipkinReporterUrl string `long:"zipkin-url" value-name:"URL" description:"Url for zipkin reporting."`
 		DatadogReporting  bool   `long:"datadog-reporting" description:"Enable datadog trace reporting with the default url."`
 		ListenAddr        string `long:"listen-address" value-name:"ADDR" default:":9411" description:"Address to listen for zipkin connections."`
+		CorrectSpans      bool   `long:"correct-spans" description:"Tries to corrects the spans."`
+
+		TraceAgent struct {
+			Host string `long:"trace-host" value:"localhost" description:"Hostname of the trace agent."`
+			Port string `long:"trace-port" value:"8126" description:"Port of the trace agent."`
+		}
 
 		Metrics struct {
 			DatadogApiKey string `long:"dd-apikey" value-name:"KEY" description:"Provide the datadog api key to enable datadog metrics reporting."`
@@ -80,7 +86,7 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 
 		// convert the zipkin spans to datadog spans.
 		datadogSpans := datadog.ConvertZipkinSpans(zipkinSpans, spanConverter)
-		go datadog.ReportSpans(datadogSpans)
+		go datadog.ReportSpans(datadogSpans, opts.TraceAgent.Host, opts.TraceAgent.Port)
 	}
 
 	if opts.ZipkinReporterUrl != "" {
@@ -118,9 +124,13 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	zipkinSpans := make(chan *zipkincore.Span, 16)
 	go forwardSpansToChannels(zipkinSpans, channels)
 
-	// do error correction for spans
 	originalZipkinSpans := make(chan *zipkincore.Span, 1024)
-	go ErrorCorrectSpans(originalZipkinSpans, zipkinSpans)
+	if opts.CorrectSpans {
+		// do error correction for spans
+		go ErrorCorrectSpans(originalZipkinSpans, zipkinSpans)
+	} else {
+		go PipeThroughSpans(originalZipkinSpans, zipkinSpans)
+	}
 
 	// show a nice little admin page with information and stuff.
 	admin := NewAdminHandler("/admin", "dd-zipkin-proxy",
