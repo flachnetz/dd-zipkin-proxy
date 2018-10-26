@@ -40,6 +40,7 @@ github.com/mattn/go-colorable v0.0.0-20170210172801-5411d3eea597/go.mod h1:9vuHe
 github.com/mattn/go-isatty v0.0.0-20170307163044-57fdcb988a5c/go.mod h1:M+lRXTBqGeGNdLjl/ufCoiOlB5xdOkqRJdNxMWT7Zi4=
 github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b h1:j7+1HpAFS1zy5+Q4qx1fWh90gTKwiN4QCGoY9TWyyO4=
 github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b/go.mod h1:01TrycV0kFyexm33Z7vhZRXopbI8J3TDReVlkTgMUxE=
+github.com/onsi/gomega v0.0.0-20170214000320-c463cd2a8578 h1:NESEnITkJ0V5/063VVExj8mSAxEDVwOgRYzvEvdueoE=
 github.com/onsi/gomega v0.0.0-20170214000320-c463cd2a8578/go.mod h1:C1qb7wdrVGGVU+Z6iS04AVkA3Q65CEZX59MT0QO5uiA=
 github.com/opentracing-contrib/go-observer v0.0.0-20170622124052-a52f23424492 h1:lM6RxxfUMrYL/f8bWEUqdXrANWtrL7Nndbm9iFN0DlU=
 github.com/opentracing-contrib/go-observer v0.0.0-20170622124052-a52f23424492/go.mod h1:Ngi6UdF0k5OKD5t5wlmGhe/EDKPoUM3BXZSSfIuJbis=
@@ -69,4 +70,5 @@ golang.org/x/sys v0.0.0-20170803140359-d8f5ea21b929 h1:M4VPQYSW/nB4Bcg1XMD4yW2sp
 golang.org/x/sys v0.0.0-20170803140359-d8f5ea21b929/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
 gopkg.in/tylerb/graceful.v1 v1.2.15 h1:1JmOyhKqAyX3BgTXMI84LwT6FOJ4tP2N9e2kwTCM0nQ=
 gopkg.in/tylerb/graceful.v1 v1.2.15/go.mod h1:yBhekWvR20ACXVObSSdD3u6S9DeSylanL2PAbAC/uJ8=
+gopkg.in/yaml.v2 v2.0.0-20170721122051-25c4ec802a7d h1:2DX7x6HUDGZUyuEDAhUsQQNqkb1zvDyKTjVoTdzaEzo=
 gopkg.in/yaml.v2 v2.0.0-20170721122051-25c4ec802a7d/go.mod h1:JAlM8MvJe8wmxCU4Bli9HhUf9+ttbYbLASfIpnQbh74=

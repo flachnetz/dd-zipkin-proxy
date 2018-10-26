@@ -138,10 +138,6 @@ func (tree *tree) ParentOf(span *zipkincore.Span) *zipkincore.Span {
 }
 
 func (tree *tree) Roots() []*zipkincore.Span {
-	// we can quickly detect if we only have a single root
-	if root := tree.Root(); root != nil {
-		return []*zipkincore.Span{root}
-	}
 
 	byId := map[int64]*zipkincore.Span{}
 
@@ -164,8 +160,8 @@ func (tree *tree) Roots() []*zipkincore.Span {
 }
 
 func PipeThroughSpans(in <-chan *zipkincore.Span, out chan<- *zipkincore.Span) {
-        for span := range in {
-                out <- span
+	for span := range in {
+		out <- span
 	}
 }
 
@@ -228,7 +224,7 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 
 		if traceTooLarge {
 			blacklist[traceID] = none{}
-			log.Warnf("Trace %d with %d nodes is too large.", traceID, trace.nodeCount)
+			log.Warnf("Trace %x with %d nodes is too large.", traceID, trace.nodeCount)
 			debugPrintTrace(trace)
 
 			metricsTracesTooLarge.Mark(1)
@@ -237,7 +233,7 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 
 		if traceTooOld {
 			blacklist[traceID] = none{}
-			log.Warnf("Trace %d with %d nodes is too old", traceID, trace.nodeCount)
+			log.Warnf("Trace %x with %d nodes is too old", traceID, trace.nodeCount)
 			debugPrintTrace(trace)
 
 			metricsTracesTooOld.Mark(1)
@@ -251,7 +247,7 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 			metricsTracesCorrected.Mark(1)
 		} else {
 			// we don't have a root, what now?
-			log.Warnf("No root for trace %d with %d spans", traceID, trace.nodeCount)
+			log.Warnf("No root for trace %x with %d spans", traceID, trace.nodeCount)
 			debugPrintTrace(trace)
 
 			metricsTracesWithoutRoot.Mark(1)
