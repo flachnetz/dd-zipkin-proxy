@@ -34,10 +34,10 @@ var Metrics = metrics.NewPrefixedRegistry("zipkin.proxy.")
 
 func Main(spanConverter datadog.SpanConverterFunc) {
 	var opts struct {
-		ZipkinReporterUrl string `long:"zipkin-url" value-name:"URL" description:"Url for zipkin reporting."`
-		DatadogReporting  bool   `long:"datadog-reporting" description:"Enable datadog trace reporting with the default url."`
-		ListenAddr        string `long:"listen-address" value-name:"ADDR" default:":9411" description:"Address to listen for zipkin connections."`
-		DisableSpanCorrection      bool   `long:"disable-span-correction" description:"Do not to correct the spans."`
+		ZipkinReporterUrl     string `long:"zipkin-url" value-name:"URL" description:"Url for zipkin reporting."`
+		DatadogReporting      bool   `long:"datadog-reporting" description:"Enable datadog trace reporting with the default url."`
+		ListenAddr            string `long:"listen-address" value-name:"ADDR" default:":9411" description:"Address to listen for zipkin connections."`
+		DisableSpanCorrection bool   `long:"disable-span-correction" description:"Do not to correct the spans."`
 
 		TraceAgent struct {
 			Host string `long:"trace-host" value:"localhost" description:"Hostname of the trace agent."`
@@ -127,7 +127,7 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	originalZipkinSpans := make(chan *zipkincore.Span, 1024)
 	if opts.DisableSpanCorrection {
 		go PipeThroughSpans(originalZipkinSpans, zipkinSpans)
-	} else {		
+	} else {
 		// do error correction for spans
 		go ErrorCorrectSpans(originalZipkinSpans, zipkinSpans)
 	}
