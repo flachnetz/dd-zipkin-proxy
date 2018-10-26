@@ -164,16 +164,9 @@ func (tree *tree) Roots() []*zipkincore.Span {
 }
 
 func PipeThroughSpans(in <-chan *zipkincore.Span, out chan<- *zipkincore.Span) {
-	for {
-		select {
-		case span, ok := <-in:
-			if !ok {
-				return
-			}
-			out <- span
-		}
+        for span := range in {
+                out <- span
 	}
-
 }
 
 func ErrorCorrectSpans(spanChannel <-chan *zipkincore.Span, output chan<- *zipkincore.Span) {
