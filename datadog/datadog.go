@@ -54,7 +54,7 @@ func sendSpansUsingTransport(transport tracer.Transport, spans <-chan *tracer.Sp
 	count := 0
 	byTrace := make(map[uint64][]*tracer.Span)
 
-	groupedSpans := make(chan map[uint64][]*tracer.Span, 2)
+	groupedSpans := make(chan map[uint64][]*tracer.Span, 4)
 	defer close(groupedSpans)
 
 	// send the spans in background
@@ -79,7 +79,11 @@ func sendSpansUsingTransport(transport tracer.Transport, spans <-chan *tracer.Sp
 		}
 
 		if flush && count > 0 {
-			groupedSpans <- byTrace
+			select {
+			case groupedSpans <- byTrace:
+			default:
+				log.Warnf("Could not send %d traces to datadog, sending would block.", len(byTrace))
+			}
 
 			// reset collection
 			count = 0

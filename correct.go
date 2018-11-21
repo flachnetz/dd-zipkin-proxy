@@ -58,18 +58,15 @@ func newTree() *tree {
 
 func (tree *tree) AddSpan(newSpan *zipkincore.Span) {
 	parentId := newSpan.GetParentID()
+
 	if spans := tree.nodes[parentId]; spans != nil {
 		idx := sort.Search(len(spans), func(i int) bool {
 			return newSpan.ID >= spans[i].ID
 		})
 
-		var spanToUpdate *zipkincore.Span
 		if idx < len(spans) && spans[idx].ID == newSpan.ID {
-			spanToUpdate = spans[idx]
-		}
-
-		if spanToUpdate != nil {
-			mergeSpansInPlace(spanToUpdate, newSpan)
+			// update the existing span with the same id
+			mergeSpansInPlace(spans[idx], newSpan)
 		} else {
 			// a new span, just add it to the list of spans
 			tree.nodes[parentId] = insertSpan(spans, idx, newSpan)
@@ -401,7 +398,7 @@ func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
 	//       |_cs________|_____________| cr
 	//                   |
 	//                   |--| <-  (ss+sr)/2 - (cr+cs)/2. If the server is left of the client, this difference is
-	//                      |     positive. We need to substract the clients average from the servers average time
+	//                      |     positive. We need to subtract the clients average from the servers average time
 	//                      |     to get the corrected time in "client time."
 	//            __________|__________
 	//           |_sr_______|__________| ss
@@ -442,7 +439,7 @@ func mergeSpansInPlace(spanToUpdate *zipkincore.Span, newSpan *zipkincore.Span) 
 		spanToUpdate.ParentID = newSpan.ParentID
 	}
 
-	// if the new span was send from a server then we want to priority the annotations
+	// if the new span was send from a server then we want to prioritize the annotations
 	// of the client span. Because of this, we'll add the new spans annotations in front of
 	// the old spans annotations - sounds counter-intuitive?
 	// It is not if you think of it as "the last value wins!" - like settings values in a map.
@@ -452,10 +449,10 @@ func mergeSpansInPlace(spanToUpdate *zipkincore.Span, newSpan *zipkincore.Span) 
 	if len(newSpan.Annotations) > 0 {
 		if newSpanIsServer {
 			// prepend the new annotations to the spanToUpdate ones
-			spans := make([]*zipkincore.Annotation, 0, len(spanToUpdate.Annotations)+len(newSpan.Annotations))
-			spans = append(spans, newSpan.Annotations...)
-			spans = append(spans, spanToUpdate.Annotations...)
-			spanToUpdate.Annotations = spans
+			var annotations []*zipkincore.Annotation
+			annotations = append(annotations, newSpan.Annotations...)
+			annotations = append(annotations, spanToUpdate.Annotations...)
+			spanToUpdate.Annotations = annotations
 
 		} else {
 			spanToUpdate.Annotations = append(spanToUpdate.Annotations, newSpan.Annotations...)
@@ -466,10 +463,10 @@ func mergeSpansInPlace(spanToUpdate *zipkincore.Span, newSpan *zipkincore.Span) 
 	if len(newSpan.BinaryAnnotations) > 0 {
 		if newSpanIsServer {
 			// prepend the new annotations to the spanToUpdate ones
-			spans := make([]*zipkincore.BinaryAnnotation, 0, len(spanToUpdate.BinaryAnnotations)+len(newSpan.BinaryAnnotations))
-			spans = append(spans, newSpan.BinaryAnnotations...)
-			spans = append(spans, spanToUpdate.BinaryAnnotations...)
-			spanToUpdate.BinaryAnnotations = spans
+			var annotations []*zipkincore.BinaryAnnotation
+			annotations = append(annotations, newSpan.BinaryAnnotations...)
+			annotations = append(annotations, spanToUpdate.BinaryAnnotations...)
+			spanToUpdate.BinaryAnnotations = annotations
 
 		} else {
 			spanToUpdate.BinaryAnnotations = append(spanToUpdate.BinaryAnnotations, newSpan.BinaryAnnotations...)

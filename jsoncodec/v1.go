@@ -220,11 +220,11 @@ func (id *Id) MarshalJSON() ([]byte, error) {
 
 func (id *Id) UnmarshalJSON(bytes []byte) error {
 	if len(bytes) < 2 || bytes[0] != '"' || bytes[len(bytes)-1] != '"' {
-		return errors.New("Expected hex encoded string.")
+		return errors.New("expected hex encoded string")
 	}
 
 	if len(bytes) > 34 {
-		return errors.New("Hex value too large.")
+		return errors.New("hex value too large")
 	}
 
 	var result int64
@@ -241,7 +241,7 @@ func (id *Id) UnmarshalJSON(bytes []byte) error {
 			result = (result << 4) | int64(c-'A') + 10
 
 		default:
-			return fmt.Errorf("Hex value must only contain [0-9a-f], got '%c'.", c)
+			return fmt.Errorf("hex value must only contain [0-9a-f], got '%c'", c)
 		}
 	}
 
