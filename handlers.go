@@ -50,7 +50,7 @@ func handleSpans(spans chan<- *zipkincore.Span, version int) httprouter.Handle {
 			log.WithField("prefix", "parser").Warnf("Request failed with error: %s", err)
 
 		} else {
-			w.WriteHeader(http.StatusNoContent)
+			w.WriteHeader(http.StatusAccepted)
 		}
 	}
 }
