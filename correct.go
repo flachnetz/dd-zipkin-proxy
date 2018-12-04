@@ -304,7 +304,7 @@ func debugPrintTrace(trace *tree) {
 		children := trace.ChildrenOf(node)
 		for idx, child := range children {
 			if level == maxLevel {
-				log.Warnf("%s  [...]")
+				log.Warnf("%s  [...]", space)
 				break
 			}
 
