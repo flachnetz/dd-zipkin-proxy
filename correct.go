@@ -3,6 +3,7 @@ package zipkinproxy
 import (
 	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"github.com/rcrowley/go-metrics"
+	"github.com/sirupsen/logrus"
 	"sort"
 	"strings"
 	"time"
@@ -283,6 +284,10 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 }
 
 func debugPrintTrace(trace *tree) {
+	if logrus.GetLevel() != logrus.DebugLevel {
+		return
+	}
+
 	const maxLevel = 6
 	const maxChildCount = 32
 

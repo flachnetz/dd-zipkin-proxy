@@ -12,7 +12,7 @@ var log = logrus.WithField("prefix", "datadog")
 var logTraces = os.Getenv("DD_LOG_TRACES") == "true"
 
 const flushInterval = 2 * time.Second
-const flushSpanCount = 10000
+const flushSpanCount = 1000
 
 // Create a new default transport.
 func defaultTransport(hostname, port string) tracer.Transport {
