@@ -2,7 +2,7 @@ github.com/DataDog/dd-trace-go v0.6.1 h1:nsZ2lohbSw1CKtfNRu3wPh1jFirv6XSz8vqNpuI
 github.com/DataDog/dd-trace-go v0.6.1/go.mod h1:SmQTTcC37XMyEm75HV0AWiZIYxDiaNhRi49zorIpW+o=
 github.com/Shopify/sarama v1.11.0 h1:JD701r42hP1ms1uytUMa34jZgoddt0XhiElhJt+2ERE=
 github.com/Shopify/sarama v1.11.0/go.mod h1:FVkBWblsNy7DGZRfXLU0O9RCGt5g3g3yEuWXgklEdEo=
-github.com/apache/thrift v0.0.0-20180517082609-88591e32e710 h1:cN7wkMT/mhe/xN4nE+Xh93lbJhrniXKtOYwAVeDlFOc=
+github.com/apache/thrift v0.0.0-20180517082609-88591e32e710 h1:yQgsAAMc53RejIFr92XuCVHnSZBHZGjOq2gLONOLWMQ=
 github.com/apache/thrift v0.0.0-20180517082609-88591e32e710/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
 github.com/davecgh/go-spew v0.0.0-20170711183451-adab96458c51 h1:6HtyV9eyjTS2qw6oy8AUPnKvo8P0CUzv6xyUmcMFhK8=
 github.com/davecgh/go-spew v0.0.0-20170711183451-adab96458c51/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -16,6 +16,8 @@ github.com/eapache/queue v1.1.0 h1:YOEu7KNc61ntiQlcEeUIoDTJ2o8mQznoNvUhiigpIqc=
 github.com/eapache/queue v1.1.0/go.mod h1:6eCeP0CKFpHLu8blIFXhExK/dRa7WDZfr6jVFPTqq+I=
 github.com/flachnetz/go-admin v0.0.0-20171110102317-273ae75d90fb h1:oW623yqyW6lDQHAUlVvDpc39HHeyMVgeF2JwG8KCJwQ=
 github.com/flachnetz/go-admin v0.0.0-20171110102317-273ae75d90fb/go.mod h1:NLn/OCLKN1xay9FvSZu36UWlaHSIB83mUu/RdI3eApY=
+github.com/flachnetz/go-admin v1.5.3 h1:9X9yjkUaEl9N6UR/7D91IxfIMp1nWrhrSuCTCdP+ukw=
+github.com/flachnetz/go-admin v1.5.3/go.mod h1:NLn/OCLKN1xay9FvSZu36UWlaHSIB83mUu/RdI3eApY=
 github.com/go-logfmt/logfmt v0.3.0 h1:8HUsc87TaSWLKwrnumgC8/YconD2fJQsRJAsWaPg2ic=
 github.com/go-logfmt/logfmt v0.3.0/go.mod h1:Qt1PoO58o5twSAckw1HlFXLmHsOX5/0LbT9GBnD5lWE=
 github.com/gogo/protobuf v0.0.0-20170731182949-98066786c62c h1:oaxddPEjLNrszsh+txzQcAwzOstCTUJNSvjr1Nttj+I=

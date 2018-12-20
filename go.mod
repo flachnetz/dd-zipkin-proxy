@@ -9,7 +9,7 @@ require (
 	github.com/eapache/go-resiliency v0.0.0-20170607163615-b1fe83b5b03f
 	github.com/eapache/go-xerial-snappy v0.0.0-20160609142408-bb955e01b934
 	github.com/eapache/queue v1.1.0
-	github.com/flachnetz/go-admin v0.0.0-20171110102317-273ae75d90fb
+	github.com/flachnetz/go-admin v1.5.3
 	github.com/go-logfmt/logfmt v0.3.0
 	github.com/gogo/protobuf v0.0.0-20170731182949-98066786c62c
 	github.com/goji/httpauth v0.0.0-20160601135302-2da839ab0f4d
