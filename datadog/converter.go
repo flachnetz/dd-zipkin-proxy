@@ -39,7 +39,12 @@ func sinkSpan(span *zipkincore.Span) tracer.Span {
 		}
 	}
 
-	var ddSpan ddtrace.Span = tracer.StartSpan(span.Name, func(cfg *ddtrace.StartSpanConfig) {
+	name := span.Name
+	if name == "" {
+		name = "unknown"
+	}
+
+	var ddSpan ddtrace.Span = tracer.StartSpan(name, func(cfg *ddtrace.StartSpanConfig) {
 		cfg.StartTime = startTime
 		cfg.SpanID = uint64(span.ID)
 		cfg.Tags = tags
