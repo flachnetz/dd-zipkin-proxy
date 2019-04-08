@@ -2,6 +2,7 @@ package datadog
 
 import (
 	"github.com/openzipkin-contrib/zipkin-go-opentracing/thrift/gen-go/zipkincore"
+	"github.com/pkg/errors"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
@@ -46,7 +47,17 @@ func sinkSpan(span *zipkincore.Span) tracer.Span {
 
 	var context ddtrace.SpanContext = ddSpan.Context()
 
-	refSpan := reflect.ValueOf(ddSpan).Elem()
+	refSpan := reflect.ValueOf(ddSpan)
+
+	// validate type
+	refSpanType := refSpan.Type()
+	if refSpanType.Kind() != reflect.Ptr || refSpanType.String() != "*tracer.span" {
+		panic(errors.Errorf("Expected Span of type *tracer.span, got '%s'", refSpanType.String()))
+	}
+
+	// dereference the pointer value
+	refSpan = refSpan.Elem()
+
 	refSpan.FieldByName("TraceID").SetUint(uint64(span.TraceID))
 
 	if span.ParentID != nil {
@@ -63,6 +74,10 @@ func sinkSpan(span *zipkincore.Span) tracer.Span {
 }
 
 func setUnexportetFieldValue(target reflect.Value, value uint64) {
+	if target.Kind() != reflect.Uint64 {
+		panic(errors.Errorf("Expect type uint64, got %s", target.Kind()))
+	}
+
 	ptr := unsafe.Pointer(target.UnsafeAddr())
 	*(*uint64)(ptr) = value
 }
