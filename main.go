@@ -10,8 +10,8 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/jessevdk/go-flags"
 	"github.com/julienschmidt/httprouter"
-	"github.com/openzipkin/zipkin-go-opentracing"
-	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
+	"github.com/openzipkin-contrib/zipkin-go-opentracing"
+	"github.com/openzipkin-contrib/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"github.com/sirupsen/logrus"
 
 	datadog2 "github.com/eSailors/go-datadog"
@@ -23,8 +23,6 @@ import (
 	"regexp"
 	"strings"
 
-	"encoding/json"
-	"github.com/DataDog/dd-trace-go/tracer"
 	_ "github.com/apache/thrift/lib/go/thrift"
 )
 
@@ -32,7 +30,9 @@ var log = logrus.WithField("prefix", "main")
 
 var Metrics = metrics.NewPrefixedRegistry("zipkin.proxy.")
 
-func Main(spanConverter datadog.SpanConverterFunc) {
+type SpanConverter func(span *zipkincore.Span) *zipkincore.Span
+
+func Main(spanConverter SpanConverter) {
 	var opts struct {
 		ZipkinReporterUrl     string `long:"zipkin-url" value-name:"URL" description:"Url for zipkin reporting."`
 		DatadogReporting      bool   `long:"datadog-reporting" description:"Enable datadog trace reporting with the default url."`
@@ -81,12 +81,11 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 		log.Info("Enable forwarding of spans to datadog trace-agent")
 
 		// accept zipkin spans
-		zipkinSpans := make(chan *zipkincore.Span, 512)
+		zipkinSpans := make(chan *zipkincore.Span, 1024)
 		channels = append(channels, zipkinSpans)
 
-		// convert the zipkin spans to datadog spans.
-		datadogSpans := datadog.ConvertZipkinSpans(zipkinSpans, spanConverter)
-		go datadog.ReportSpans(datadogSpans, opts.TraceAgent.Host, opts.TraceAgent.Port)
+		// send out traces to datadog
+		go datadog.Sink(zipkinSpans)
 	}
 
 	if opts.ZipkinReporterUrl != "" {
@@ -102,7 +101,7 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 		}
 
 		// accept zipkin spans
-		zipkinSpans := make(chan *zipkincore.Span, 512)
+		zipkinSpans := make(chan *zipkincore.Span, 1024)
 		channels = append(channels, zipkinSpans)
 
 		// forward them to another zipkin service.
@@ -112,7 +111,7 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	// a channel to store the last spans that were received
 	var buffer *SpansBuffer
 	{
-		zipkinSpans := make(chan *zipkincore.Span, 512)
+		zipkinSpans := make(chan *zipkincore.Span, 1024)
 		channels = append(channels, zipkinSpans)
 
 		// just keep references to previous spans.
@@ -122,7 +121,7 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 
 	// multiplex input channel to all the target channels
 	zipkinSpans := make(chan *zipkincore.Span, 16)
-	go forwardSpansToChannels(zipkinSpans, channels)
+	go forwardSpansToChannels(zipkinSpans, channels, spanConverter)
 
 	originalZipkinSpans := make(chan *zipkincore.Span, 1024)
 	if opts.DisableSpanCorrection {
@@ -151,34 +150,10 @@ func Main(spanConverter datadog.SpanConverterFunc) {
 	router.POST("/api/v1/spans", handleSpans(originalZipkinSpans, 1))
 	router.POST("/api/v2/spans", handleSpans(originalZipkinSpans, 2))
 
-	router.POST("/api/v1/debug", debugSpans(spanConverter, 1))
-	router.POST("/api/v2/debug", debugSpans(spanConverter, 2))
-
 	// listen for zipkin messages on http api
 	if err := httpListen(opts.ListenAddr, router); err != nil {
 		log.Errorf("Could not start http server: %s", err)
 		return
-	}
-}
-
-func debugSpans(spanConverter datadog.SpanConverterFunc, version int) httprouter.Handle {
-	return func(w http.ResponseWriter, r *http.Request, params httprouter.Params) {
-		spansCh := make(chan *zipkincore.Span, 1024)
-
-		go func() {
-			defer close(spansCh)
-			handleSpans(spansCh, version)(noopResponseWriter{}, r, params)
-		}()
-
-		var ddSpans []*tracer.Span
-		for span := range spansCh {
-			ddSpan := spanConverter(span)
-			ddSpans = append(ddSpans, ddSpan)
-		}
-
-		// serialize those spans
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ddSpans)
 	}
 }
 
@@ -230,10 +205,10 @@ func registerAdminHandler(router *httprouter.Router, handler http.Handler) {
 	}
 }
 
-func forwardSpansToChannels(source <-chan *zipkincore.Span, targets []chan<- *zipkincore.Span) {
+func forwardSpansToChannels(source <-chan *zipkincore.Span, targets []chan<- *zipkincore.Span, converter SpanConverter) {
 	for span := range source {
 		for _, target := range targets {
-			target <- span
+			target <- converter(span)
 		}
 	}
 }

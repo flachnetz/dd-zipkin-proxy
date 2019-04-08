@@ -7,7 +7,7 @@ import (
 	"github.com/flachnetz/dd-zipkin-proxy/cache"
 	"github.com/flachnetz/dd-zipkin-proxy/jsoncodec"
 	"github.com/julienschmidt/httprouter"
-	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
+	"github.com/openzipkin-contrib/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"github.com/pkg/errors"
 	"github.com/rcrowley/go-metrics"
 	"io"

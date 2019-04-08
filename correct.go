@@ -1,7 +1,7 @@
 package zipkinproxy
 
 import (
-	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
+	"github.com/openzipkin-contrib/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"github.com/rcrowley/go-metrics"
 	"github.com/sirupsen/logrus"
 	"sort"
@@ -239,17 +239,17 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 		}
 
 		// if we have a root, try do error correction
-		root := trace.Root()
-		if root != nil {
-			correctTreeTimings(trace, root, 0)
+		roots := trace.Roots()
+		if len(roots) == 1 {
+			correctTreeTimings(trace, roots[0], 0)
 			metricsTracesCorrected.Mark(1)
 		} else {
 			// we don't have a root, what now?
-			log.Warnf("No root for trace %x with %d spans", traceID, trace.nodeCount)
+			log.Debugf("No unique root for trace %x with %d spans", traceID, trace.nodeCount)
 			debugPrintTrace(trace)
 
+			// send it anyways
 			metricsTracesWithoutRoot.Mark(1)
-			continue
 		}
 
 		// send all the spans to the output channel

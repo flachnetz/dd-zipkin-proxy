@@ -2,7 +2,7 @@ package zipkinproxy
 
 import (
 	"github.com/flachnetz/dd-zipkin-proxy/jsoncodec"
-	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
+	"github.com/openzipkin-contrib/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"sync"
 )
 

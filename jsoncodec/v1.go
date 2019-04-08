@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/flachnetz/dd-zipkin-proxy/cache"
-	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
+	"github.com/openzipkin-contrib/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"net"
 )
 
