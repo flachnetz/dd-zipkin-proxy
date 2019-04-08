@@ -17,12 +17,6 @@ func sinkSpan(span *zipkincore.Span) {
 	startTime := time.Unix(0, span.GetTimestamp()*int64(time.Microsecond))
 	finishTime := startTime.Add(time.Duration(span.GetDuration()) * time.Microsecond)
 
-	ctx := spanContext{
-		startTime: startTime,
-		traceId:   uint64(span.TraceID),
-		spanId:    uint64(span.ID),
-	}
-
 	tags := map[string]interface{}{}
 	for _, an := range span.BinaryAnnotations {
 		value := string(an.Value)
@@ -44,9 +38,16 @@ func sinkSpan(span *zipkincore.Span) {
 
 	ddSpan := tracer.StartSpan(span.Name, func(cfg *ddtrace.StartSpanConfig) {
 		cfg.StartTime = startTime
-		cfg.Parent = ctx
 		cfg.SpanID = uint64(span.ID)
 		cfg.Tags = tags
+
+		if span.ParentID != nil {
+			cfg.Parent = spanContext{
+				startTime: startTime,
+				traceId:   uint64(span.TraceID),
+				spanId:    uint64(*span.ParentID),
+			}
+		}
 	})
 
 	ddSpan.Finish(tracer.FinishTime(finishTime))

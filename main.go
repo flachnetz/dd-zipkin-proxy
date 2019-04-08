@@ -208,7 +208,9 @@ func registerAdminHandler(router *httprouter.Router, handler http.Handler) {
 func forwardSpansToChannels(source <-chan *zipkincore.Span, targets []chan<- *zipkincore.Span, converter SpanConverter) {
 	for span := range source {
 		for _, target := range targets {
-			target <- converter(span)
+			if converted := converter(span); converted != nil {
+				target <- converted
+			}
 		}
 	}
 }
