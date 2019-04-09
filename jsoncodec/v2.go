@@ -26,11 +26,6 @@ func (span *SpanV2) ToZipkincoreSpan() *zipkincore.Span {
 
 	endpoint := endpointToZipkin(span.Endpoint)
 
-	if len(span.Tags) == 0 {
-		span.Tags = map[string]string{}
-		span.Tags["dd.name"] = span.Name
-	}
-
 	var binaryAnnotations []*zipkincore.BinaryAnnotation
 	for key, value := range span.Tags {
 		binaryAnnotations = append(binaryAnnotations, &zipkincore.BinaryAnnotation{
