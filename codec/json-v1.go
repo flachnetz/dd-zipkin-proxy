@@ -86,5 +86,19 @@ func (span *spanV1) ToSpan() proxy.Span {
 		proxySpan.Duration = time.Duration(*span.Duration) * time.Microsecond
 	}
 
+	sr := proxySpan.Timings["sr"]
+	ss := proxySpan.Timings["ss"]
+	if sr > 0 && ss > 0 {
+		proxySpan.Timestamp = sr
+		proxySpan.Duration = time.Duration(ss - sr)
+	}
+
+	cs := proxySpan.Timings["cs"]
+	cr := proxySpan.Timings["cr"]
+	if cs > 0 && cr > 0 {
+		proxySpan.Timestamp = cs
+		proxySpan.Duration = time.Duration(cr - cs)
+	}
+
 	return proxySpan
 }
