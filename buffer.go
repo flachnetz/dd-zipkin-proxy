@@ -1,23 +1,22 @@
 package zipkinproxy
 
 import (
-	"github.com/flachnetz/dd-zipkin-proxy/jsoncodec"
-	"github.com/openzipkin-contrib/zipkin-go-opentracing/thrift/gen-go/zipkincore"
+	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"sync"
 )
 
 type SpansBuffer struct {
 	lock     sync.Mutex
 	position uint
-	spans    []*zipkincore.Span
+	spans    []proxy.Span
 }
 
 func NewSpansBuffer(capacity uint) *SpansBuffer {
-	spans := make([]*zipkincore.Span, capacity)
+	spans := make([]proxy.Span, capacity)
 	return &SpansBuffer{spans: spans}
 }
 
-func (buffer *SpansBuffer) ReadFrom(spans <-chan *zipkincore.Span) {
+func (buffer *SpansBuffer) ReadFrom(spans <-chan proxy.Span) {
 	for span := range spans {
 		buffer.lock.Lock()
 		buffer.spans[buffer.position] = span
@@ -26,14 +25,14 @@ func (buffer *SpansBuffer) ReadFrom(spans <-chan *zipkincore.Span) {
 	}
 }
 
-func (buffer *SpansBuffer) ToSlice() []jsoncodec.SpanV1 {
+func (buffer *SpansBuffer) ToSlice() []proxy.Span {
 	buffer.lock.Lock()
 	defer buffer.lock.Unlock()
 
-	var result []jsoncodec.SpanV1
+	var result []proxy.Span
 	for _, span := range buffer.spans {
-		if span != nil {
-			result = append(result, jsoncodec.FromSpan(span))
+		if span.Id != 0 {
+			result = append(result, span)
 		}
 	}
 

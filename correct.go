@@ -1,13 +1,15 @@
 package zipkinproxy
 
 import (
-	"github.com/openzipkin-contrib/zipkin-go-opentracing/thrift/gen-go/zipkincore"
+	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"github.com/rcrowley/go-metrics"
 	"github.com/sirupsen/logrus"
 	"sort"
 	"strings"
 	"time"
 )
+
+type Id = proxy.Id
 
 const bufferTime = 10 * time.Second
 const maxSpans = 100000
@@ -24,17 +26,17 @@ var metricsTracesCorrected metrics.Meter
 var metricsReceivedBlacklistedSpan metrics.Meter
 
 func init() {
-	metricsSpansMerged = metrics.GetOrRegisterMeter("spans.merged", Metrics)
-	metricsTracesCorrected = metrics.GetOrRegisterMeter("traces.corrected", Metrics)
-	metricsTracesFinished = metrics.GetOrRegisterMeter("traces.finished", Metrics)
-	metricsTracesWithoutRoot = metrics.GetOrRegisterMeter("traces.noroot", Metrics)
-	metricsTracesTooLarge = metrics.GetOrRegisterMeter("traces.toolarge", Metrics)
-	metricsTracesTooOld = metrics.GetOrRegisterMeter("traces.tooold", Metrics)
-	metricsTracesInflight = metrics.GetOrRegisterGauge("traces.partial.count", Metrics)
-	metricsSpansInflight = metrics.GetOrRegisterGauge("traces.partial.span.count", Metrics)
-	metricsReceivedBlacklistedSpan = metrics.GetOrRegisterMeter("blacklist.span.received", Metrics)
+	metricsSpansMerged = metrics.GetOrRegisterMeter("spans.merged", nil)
+	metricsTracesCorrected = metrics.GetOrRegisterMeter("traces.corrected", nil)
+	metricsTracesFinished = metrics.GetOrRegisterMeter("traces.finished", nil)
+	metricsTracesWithoutRoot = metrics.GetOrRegisterMeter("traces.noroot", nil)
+	metricsTracesTooLarge = metrics.GetOrRegisterMeter("traces.toolarge", nil)
+	metricsTracesTooOld = metrics.GetOrRegisterMeter("traces.tooold", nil)
+	metricsTracesInflight = metrics.GetOrRegisterGauge("traces.partial.count", nil)
+	metricsSpansInflight = metrics.GetOrRegisterGauge("traces.partial.span.count", nil)
+	metricsReceivedBlacklistedSpan = metrics.GetOrRegisterMeter("blacklist.span.received", nil)
 
-	metricsTracesFinishedSize = metrics.GetOrRegisterHistogram("traces.finishedsize", Metrics,
+	metricsTracesFinishedSize = metrics.GetOrRegisterHistogram("traces.finishedsize", nil,
 		metrics.NewUniformSample(1024))
 }
 
@@ -42,7 +44,9 @@ type none struct{}
 
 type tree struct {
 	// parent-id to span
-	nodes     map[int64][]*zipkincore.Span
+	byParent map[Id][]proxy.Span
+	byId     map[Id]Id
+
 	started   time.Time
 	updated   time.Time
 	nodeCount uint16
@@ -51,83 +55,123 @@ type tree struct {
 func newTree() *tree {
 	now := time.Now()
 	return &tree{
-		nodes:   make(map[int64][]*zipkincore.Span),
-		started: now,
-		updated: now,
+		byParent: map[Id][]proxy.Span{},
+		byId:     map[Id]Id{},
+		started:  now,
+		updated:  now,
 	}
 }
 
-func (tree *tree) AddSpan(newSpan *zipkincore.Span) {
-	parentId := newSpan.GetParentID()
+func (tree *tree) AddSpan(newSpan proxy.Span) {
+	parentId := newSpan.Parent
 
-	if spans := tree.nodes[parentId]; spans != nil {
+	existingParent, existing := tree.byId[newSpan.Id]
+	if existing {
+		// We already have a node with this id.
+		// If the parent we already know about is more specific, we will use
+		// that one to store our node.
+		if existingParent != 0 && parentId == 0 {
+			parentId = existingParent
+		}
+
+		if existingParent == 0 && parentId != 0 {
+			spans := tree.byParent[0]
+
+			idx := sort.Search(len(spans), func(i int) bool {
+				return newSpan.Id >= spans[i].Id
+			})
+
+			if idx < len(spans) && spans[idx].Id == newSpan.Id {
+				previousSpan := spans[idx]
+				previousSpan.Parent = parentId
+				mergeSpansInPlace(&previousSpan, newSpan)
+
+				// if we already put the node into the root, but now we would like
+				// to put it somewhere else, we need to remove it from the root now.
+				tree.byParent[0] = append(spans[:idx], spans[idx+1:]...)
+				tree.byParent[parentId] = insertSpan(tree.byParent[parentId], -1, previousSpan)
+
+				tree.byId[newSpan.Id] = parentId
+				tree.updated = time.Now()
+				return
+			}
+		}
+	}
+
+	if spans := tree.byParent[parentId]; spans != nil {
 		idx := sort.Search(len(spans), func(i int) bool {
-			return newSpan.ID >= spans[i].ID
+			return newSpan.Id >= spans[i].Id
 		})
 
-		if idx < len(spans) && spans[idx].ID == newSpan.ID {
+		if idx < len(spans) && spans[idx].Id == newSpan.Id {
 			// update the existing span with the same id
-			mergeSpansInPlace(spans[idx], newSpan)
+			mergeSpansInPlace(&spans[idx], newSpan)
 		} else {
 			// a new span, just add it to the list of spans
-			tree.nodes[parentId] = insertSpan(spans, idx, newSpan)
+			tree.byParent[parentId] = insertSpan(spans, idx, newSpan)
 			tree.nodeCount++
 		}
 	} else {
 		// no span with this parent, we can just add it
-		tree.nodes[parentId] = []*zipkincore.Span{newSpan}
+		tree.byParent[parentId] = []proxy.Span{newSpan}
 		tree.nodeCount++
 	}
 
+	tree.byId[newSpan.Id] = parentId
 	tree.updated = time.Now()
 }
 
-func (tree *tree) GetSpan(parentId, spanId int64) *zipkincore.Span {
-	spans := tree.nodes[parentId]
+func (tree *tree) GetSpan(spanId Id) *proxy.Span {
+	spans := tree.byParent[tree.byId[spanId]]
 	idx := sort.Search(len(spans), func(i int) bool {
-		return spanId >= spans[i].ID
+		return spanId >= spans[i].Id
 	})
 
-	if idx < len(spans) && spans[idx].ID == spanId {
-		return spans[idx]
+	if idx < len(spans) && spans[idx].Id == spanId {
+		return &spans[idx]
 	}
 
 	return nil
 }
 
-func insertSpan(spans []*zipkincore.Span, idx int, span *zipkincore.Span) []*zipkincore.Span {
-	spans = append(spans, nil)
+func insertSpan(spans []proxy.Span, idx int, span proxy.Span) []proxy.Span {
+	if idx == -1 {
+		idx = sort.Search(len(spans), func(i int) bool {
+			return span.Id >= spans[i].Id
+		})
+	}
+
+	spans = append(spans, proxy.Span{})
 	copy(spans[idx+1:], spans[idx:])
 	spans[idx] = span
 	return spans
 }
 
 // gets the root of this tree, or nil, if no root exists.
-func (tree *tree) Root() *zipkincore.Span {
-	nodes := tree.nodes[0]
+func (tree *tree) Root() *proxy.Span {
+	nodes := tree.byParent[0]
 	if len(nodes) == 1 {
-		return nodes[0]
+		return &nodes[0]
 	} else {
 		return nil
 	}
 }
 
 // gets the children of the given span in this tree.
-func (tree *tree) ChildrenOf(span *zipkincore.Span) []*zipkincore.Span {
-	return tree.nodes[span.ID]
+func (tree *tree) ChildrenOf(spanId Id) []proxy.Span {
+	return tree.byParent[spanId]
 }
 
 // gets the parent of the given span in this tree.
-func (tree *tree) ParentOf(span *zipkincore.Span) *zipkincore.Span {
-	parentId := span.ParentID
-	if parentId == nil {
+func (tree *tree) ParentOf(span proxy.Span) *proxy.Span {
+	if span.Parent == 0 {
 		return nil
 	}
 
-	for _, nodes := range tree.nodes {
-		for _, node := range nodes {
-			if *parentId == node.ID {
-				return node
+	for _, nodes := range tree.byParent {
+		for idx := range nodes {
+			if nodes[idx].Id == span.Parent {
+				return &nodes[idx]
 			}
 		}
 	}
@@ -135,42 +179,35 @@ func (tree *tree) ParentOf(span *zipkincore.Span) *zipkincore.Span {
 	return nil
 }
 
-func (tree *tree) Roots() []*zipkincore.Span {
-
-	byId := map[int64]*zipkincore.Span{}
-
+func (tree *tree) Roots() []proxy.Span {
 	// map nodes by id
-	for _, nodes := range tree.nodes {
-		for _, node := range nodes {
-			byId[node.ID] = node
-		}
-	}
+	var candidates []proxy.Span
 
-	// now select all nodes with no parent
-	var candidates []*zipkincore.Span
-	for _, node := range byId {
-		if _, ok := byId[node.GetParentID()]; !ok {
-			candidates = append(candidates, node)
+	for _, nodes := range tree.byParent {
+		for _, node := range nodes {
+			if _, ok := tree.byId[node.Parent]; !ok {
+				candidates = append(candidates, node)
+			}
 		}
 	}
 
 	return candidates
 }
 
-func PipeThroughSpans(in <-chan *zipkincore.Span, out chan<- *zipkincore.Span) {
+func PipeThroughSpans(in <-chan proxy.Span, out chan<- proxy.Span) {
 	for span := range in {
 		out <- span
 	}
 }
 
-func ErrorCorrectSpans(spanChannel <-chan *zipkincore.Span, output chan<- *zipkincore.Span) {
-	traces := make(map[int64]*tree)
+func ErrorCorrectSpans(spanChannel <-chan proxy.Span, output chan<- proxy.Span) {
+	traces := make(map[Id]*tree)
 
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	// blacklisted trace ids.
-	blacklistedTraces := map[int64]none{}
+	blacklistedTraces := map[Id]none{}
 
 	for {
 		select {
@@ -181,15 +218,15 @@ func ErrorCorrectSpans(spanChannel <-chan *zipkincore.Span, output chan<- *zipki
 			}
 
 			// check if trace is in black list
-			if _, ok := blacklistedTraces[span.TraceID]; ok {
+			if _, ok := blacklistedTraces[span.Trace]; ok {
 				metricsReceivedBlacklistedSpan.Mark(1)
 				continue
 			}
 
-			trace := traces[span.TraceID]
+			trace := traces[span.Trace]
 			if trace == nil {
 				trace = newTree()
-				traces[span.TraceID] = trace
+				traces[span.Trace] = trace
 			}
 
 			trace.AddSpan(span)
@@ -200,7 +237,7 @@ func ErrorCorrectSpans(spanChannel <-chan *zipkincore.Span, output chan<- *zipki
 	}
 }
 
-func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<- *zipkincore.Span) {
+func finishTraces(traces map[Id]*tree, blacklist map[Id]none, output chan<- proxy.Span) {
 	var spanCount int64
 
 	deadlineUpdate := time.Now().Add(-bufferTime)
@@ -240,20 +277,27 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 
 		// if we have a root, try do error correction
 		roots := trace.Roots()
-		if len(roots) == 1 {
-			correctTreeTimings(trace, roots[0], 0)
-			metricsTracesCorrected.Mark(1)
-		} else {
+		if len(roots) > 1 && allTheSameParent(roots) {
+			// add a fake root to the span and look for a new root span
+			trace.AddSpan(createFakeRoot(roots))
+			roots = trace.Roots()
+		}
+
+		if len(roots) != 1 {
 			// we don't have a root, what now?
 			log.Debugf("No unique root for trace %x with %d spans", traceID, trace.nodeCount)
 			debugPrintTrace(trace)
 
 			// send it anyways
 			metricsTracesWithoutRoot.Mark(1)
+			continue
 		}
 
+		correctTreeTimings(trace, &roots[0], 0)
+		metricsTracesCorrected.Mark(1)
+
 		// send all the spans to the output channel
-		for _, spans := range trace.nodes {
+		for _, spans := range trace.byParent {
 			for _, span := range spans {
 				output <- span
 			}
@@ -283,6 +327,38 @@ func finishTraces(traces map[int64]*tree, blacklist map[int64]none, output chan<
 	}
 }
 
+func createFakeRoot(spans []proxy.Span) proxy.Span {
+	firstTimestamp := spans[0].Timestamp
+	lastTimestamp := spans[0].Timestamp.Add(spans[0].Duration)
+
+	for _, span := range spans[1:] {
+		if span.Timestamp < firstTimestamp {
+			firstTimestamp = span.Timestamp
+		}
+
+		ts := span.Timestamp.Add(span.Duration)
+		if ts > lastTimestamp {
+			lastTimestamp = ts
+		}
+	}
+
+	root := proxy.NewSpan("fake-root", spans[0].Trace, spans[0].Parent, 0)
+	root.Service = "fake-root"
+	root.Timestamp = firstTimestamp
+	root.Duration = time.Duration(lastTimestamp - firstTimestamp)
+	return root
+}
+
+func allTheSameParent(spans []proxy.Span) bool {
+	for _, span := range spans {
+		if spans[0].Parent != span.Parent {
+			return false
+		}
+	}
+
+	return true
+}
+
 func debugPrintTrace(trace *tree) {
 	if logrus.GetLevel() != logrus.DebugLevel {
 		return
@@ -296,17 +372,15 @@ func debugPrintTrace(trace *tree) {
 		return
 	}
 
-	var printNode func(*zipkincore.Span, int)
+	var printNode func(proxy.Span, int)
 
-	printNode = func(node *zipkincore.Span, level int) {
+	printNode = func(node proxy.Span, level int) {
 		space := strings.Repeat("  ", level)
 
-		log.Warnf("%s%s [%x] (%s, %s, parent=%x)", space, node.Name, node.ID,
-			time.Unix(0, node.GetTimestamp()*int64(time.Microsecond)),
-			time.Duration(node.GetDuration())*time.Microsecond,
-			node.GetParentID())
+		log.Warnf("%s%s [%x] (%s, %s, parent=%x)", space, node.Name, node.Id,
+			node.Timestamp.ToTime(), node.Duration, node.Parent)
 
-		children := trace.ChildrenOf(node)
+		children := trace.ChildrenOf(node.Id)
 		for idx, child := range children {
 			if level == maxLevel {
 				log.Warnf("%s  [...]", space)
@@ -323,19 +397,19 @@ func debugPrintTrace(trace *tree) {
 	}
 
 	for idx, root := range roots {
-		log.Warnf("Trace %x, root #%d", roots[0].TraceID, idx)
+		log.Warnf("Trace %x, root #%d", roots[0].Trace, idx)
 		printNode(root, 0)
 	}
 
 	log.Warnln()
 }
 
-func discardSuspiciousTraces(trees map[int64]*tree, maxSpans int) {
+func discardSuspiciousTraces(trees map[Id]*tree, maxSpans int) {
 	var spanCount int
 
 	type trace struct {
 		*tree
-		id int64
+		id Id
 	}
 
 	traces := make([]trace, 0, len(trees))
@@ -368,125 +442,117 @@ func discardSuspiciousTraces(trees map[int64]*tree, maxSpans int) {
 	}
 }
 
-func correctTreeTimings(tree *tree, node *zipkincore.Span, offset int64) {
-	if offset != 0 && node.Timestamp != nil {
-		*node.Timestamp += offset
+func correctTreeTimings(tree *tree, node *proxy.Span, offset time.Duration) {
+	if offset != 0 {
+		node.Timestamp.AddInPlace(offset)
 	}
 
-	var clientService, serverService string
-	var clientRecv, clientSent, serverRecv, serverSent int64
-	for _, an := range node.Annotations {
-		if len(an.Value) == 2 {
-			switch an.Value {
-			case "cs":
-				clientSent = an.Timestamp + offset
-				if an.Host != nil {
-					clientService = an.Host.ServiceName
-				}
-
-			case "cr":
-				clientRecv = an.Timestamp + offset
-
-			case "sr":
-				serverRecv = an.Timestamp + offset
-				if an.Host != nil {
-					serverService = an.Host.ServiceName
-				}
-
-			case "ss":
-				serverSent = an.Timestamp + offset
-			}
-		}
-	}
+	clientSent := node.Timings["cs"]
+	clientRecv := node.Timings["cr"]
+	serverSent := node.Timings["ss"]
+	serverRecv := node.Timings["sr"]
 
 	//        _________________________
 	//       |_cs________|_____________| cr
 	//                   |
-	//                   |--| <-  (ss+sr)/2 - (cr+cs)/2. If the server is left of the client, this difference is
-	//                      |     positive. We need to subtract the clients average from the servers average time
-	//                      |     to get the corrected time in "client time."
+	//                   |--| <-  (cr+cs)/2 - (ss+sr)/2. If the server is right of the client, this difference is
+	//                      |     negative. We need to add the difference to the server time
+	//                      |     to get the corrected time in "client time" under the idea that the
+	//                      |     server span is centered in respect to the client span.
 	//            __________|__________
 	//           |_sr_______|__________| ss
 
 	if clientRecv != 0 && clientSent != 0 && serverRecv != 0 && serverSent != 0 {
-		// screw in milliseconds
-		screw := time.Duration((serverRecv+serverSent)/2-(clientRecv+clientSent)/2) * time.Microsecond
+		// offset all timings
+		clientSent.AddInPlace(offset)
+		clientRecv.AddInPlace(offset)
+		serverSent.AddInPlace(offset)
+		serverRecv.AddInPlace(offset)
 
-		if screw > 25*time.Millisecond {
-			log.Debugf("Found time screw of %s between c=%s and s=%s for span '%s'",
-				screw,
-				clientService, serverService, node.Name)
+		// screw in milliseconds
+		screw := time.Duration((clientRecv+clientSent)/2 - (serverRecv+serverSent)/2)
+
+		if screw < -25*time.Millisecond || screw > 25*time.Millisecond {
+			log.Debugf("Found time screw of %s for span '%s'", screw, node.Name)
 		}
+
+		// offset for child spans
+		offset += screw
 
 		// calculate the offset for children based on the fact, that
 		// sr must occur after cs and ss must occur before cr.
-		offset -= int64(screw / time.Microsecond)
-		node.Timestamp = &clientSent
+		node.Timestamp = clientSent
 
 		// update the duration using the client info.
-		duration := clientRecv - clientSent
-		node.Duration = &duration
+		node.Duration = time.Duration(clientRecv - clientSent)
 
 	} else if clientSent != 0 && serverRecv != 0 {
-		// we only know the timestamps of server + client, so use those to adjust
-		offset -= serverRecv - clientSent
-		node.Timestamp = &clientSent
+		// we only know the timestamps of server + client
+		offset -= time.Duration(clientSent - serverRecv)
+		node.Timestamp = clientSent
 	}
 
-	for _, child := range tree.ChildrenOf(node) {
-		correctTreeTimings(tree, child, offset)
+	children := tree.ChildrenOf(node.Id)
+	for idx := range children {
+		correctTreeTimings(tree, &children[idx], offset)
 	}
 }
 
-func mergeSpansInPlace(spanToUpdate *zipkincore.Span, newSpan *zipkincore.Span) {
-	// update id only if not yet set
-	if newSpan.ParentID != nil && spanToUpdate.ParentID == nil {
-		spanToUpdate.ParentID = newSpan.ParentID
-	}
+func mergeSpansInPlace(spanToUpdate *proxy.Span, newSpan proxy.Span) {
+	_, newSpanIsServer := newSpan.Timings["sr"]
 
-	// if the new span was send from a server then we want to prioritize the annotations
-	// of the client span. Because of this, we'll add the new spans annotations in front of
-	// the old spans annotations - sounds counter-intuitive?
-	// It is not if you think of it as "the last value wins!" - like settings values in a map.
-	newSpanIsServer := hasAnnotation(newSpan, "sr")
-
-	// merge annotations
-	if len(newSpan.Annotations) > 0 {
-		if newSpanIsServer {
-			// prepend the new annotations to the spanToUpdate ones
-			var annotations []*zipkincore.Annotation
-			annotations = append(annotations, newSpan.Annotations...)
-			annotations = append(annotations, spanToUpdate.Annotations...)
-			spanToUpdate.Annotations = annotations
-
-		} else {
-			spanToUpdate.Annotations = append(spanToUpdate.Annotations, newSpan.Annotations...)
+	if newSpanIsServer {
+		// merge tags, prefer the ones from spanToUpdate
+		if spanToUpdate.Service == "" {
+			spanToUpdate.Service = newSpan.Service
 		}
-	}
 
-	// merge binary annotations
-	if len(newSpan.BinaryAnnotations) > 0 {
-		if newSpanIsServer {
-			// prepend the new annotations to the spanToUpdate ones
-			var annotations []*zipkincore.BinaryAnnotation
-			annotations = append(annotations, newSpan.BinaryAnnotations...)
-			annotations = append(annotations, spanToUpdate.BinaryAnnotations...)
-			spanToUpdate.BinaryAnnotations = annotations
+		if spanToUpdate.Name == "" {
+			spanToUpdate.Name = newSpan.Name
+		}
 
-		} else {
-			spanToUpdate.BinaryAnnotations = append(spanToUpdate.BinaryAnnotations, newSpan.BinaryAnnotations...)
+		// backup client values, so we can overwrite server values from newSpan later
+		clientTags := spanToUpdate.Tags
+		clientTimings := spanToUpdate.Timings
+
+		// merge tags
+		spanToUpdate.Tags = nil
+		for key, value := range newSpan.Tags {
+			spanToUpdate.AddTag(key, value)
+		}
+
+		for key, value := range clientTags {
+			spanToUpdate.AddTag(key, value)
+		}
+
+		// merge timings
+		spanToUpdate.Timings = nil
+		for key, value := range newSpan.Timings {
+			spanToUpdate.AddTiming(key, value)
+		}
+
+		for key, value := range clientTimings {
+			spanToUpdate.AddTiming(key, value)
+		}
+
+	} else {
+		if newSpan.Service != "" {
+			spanToUpdate.Service = newSpan.Service
+		}
+
+		if newSpan.Name != "" {
+			spanToUpdate.Name = newSpan.Name
+		}
+
+		// merge tags, prefer the ones from newSpan
+		for key, value := range newSpan.Tags {
+			spanToUpdate.AddTag(key, value)
+		}
+
+		for key, value := range newSpan.Timings {
+			spanToUpdate.AddTiming(key, value)
 		}
 	}
 
 	metricsSpansMerged.Mark(1)
-}
-
-func hasAnnotation(span *zipkincore.Span, name string) bool {
-	for _, an := range span.Annotations {
-		if an.Value == name {
-			return true
-		}
-	}
-
-	return false
 }

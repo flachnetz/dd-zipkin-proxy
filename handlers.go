@@ -1,24 +1,18 @@
 package zipkinproxy
 
 import (
-	"bytes"
 	"compress/gzip"
-	"encoding/json"
-	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/flachnetz/dd-zipkin-proxy/cache"
-	"github.com/flachnetz/dd-zipkin-proxy/jsoncodec"
+	"github.com/flachnetz/dd-zipkin-proxy/codec"
+	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"github.com/julienschmidt/httprouter"
-	"github.com/openzipkin-contrib/zipkin-go-opentracing/thrift/gen-go/zipkincore"
 	"github.com/pkg/errors"
 	"github.com/rcrowley/go-metrics"
 	"io"
-	"io/ioutil"
 	"net/http"
-	"os"
-	"sync"
+	"strings"
 )
 
-func handleSpans(spans chan<- *zipkincore.Span, version int) httprouter.Handle {
+func handleSpans(spans chan<- proxy.Span, version int) httprouter.Handle {
 	return func(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 		var bodyReader io.Reader = req.Body
 
@@ -34,23 +28,18 @@ func handleSpans(spans chan<- *zipkincore.Span, version int) httprouter.Handle {
 
 		// parse with correct mime type
 		var err error
-		if req.Header.Get("Content-Type") == "application/json" {
-			metrics.GetOrRegisterTimer("spans.receive[type:json]", Metrics).Time(func() {
+		if strings.Contains(req.Header.Get("Content-Type"), "application/json") {
+			metrics.GetOrRegisterTimer("spans.receive[type:json]", nil).Time(func() {
 				err = parseSpansWithJSON(spans, bodyReader, version)
 			})
 		} else {
-			metrics.GetOrRegisterTimer("spans.receive[type:thrift]", Metrics).Time(func() {
-				if version == 1 {
-					err = parseSpansWithThrift(spans, bodyReader)
-				} else {
-					err = errors.New("only supports thrift v1")
-				}
+			metrics.GetOrRegisterTimer("spans.receive[type:thrift]", nil).Time(func() {
+				err = parseSpansWithThrift(spans, bodyReader, version)
 			})
 		}
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
-
 			log.WithField("prefix", "parser").Warnf("Request failed with error: %s", err)
 
 		} else {
@@ -59,93 +48,51 @@ func handleSpans(spans chan<- *zipkincore.Span, version int) httprouter.Handle {
 	}
 }
 
-var writeLock sync.Mutex
-
-func parseSpansWithJSON(spansChannel chan<- *zipkincore.Span, body io.Reader, version int) error {
-	var parsedSpans []*zipkincore.Span
-
-	if false {
-		data, err := ioutil.ReadAll(body)
-		if err != nil {
-			return err
-		}
-
-		writeLock.Lock()
-		fp, err := os.OpenFile("/tmp/spans.json", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		fp.Write(data)
-		fp.WriteString("\n\n\n")
-		fp.Close()
-		writeLock.Unlock()
-
-		body = bytes.NewReader(data)
+func parseSpansWithThrift(spansChannel chan<- proxy.Span, body io.Reader, version int) error {
+	if version != 1 {
+		return errors.New("can only parse thrift v1")
 	}
 
+	parsedSpans, err := codec.ParseThriftV1(body)
+	if err != nil {
+		return errors.WithMessage(err, "parse body as thrift")
+	}
+
+	for _, span := range parsedSpans {
+		spansChannel <- span
+	}
+
+	size := int64(len(parsedSpans))
+	metrics.GetOrRegisterMeter("spans.parsed[type:thrift]", nil).Mark(size)
+
+	return nil
+}
+
+func parseSpansWithJSON(spansChannel chan<- proxy.Span, body io.Reader, version int) error {
+	var parsedSpans []proxy.Span
+
+	var err error
 	switch version {
 	case 1:
-		var parsedSpansV1 []jsoncodec.SpanV1
-		if err := json.NewDecoder(body).Decode(&parsedSpansV1); err != nil {
-			return errors.WithMessage(err, "Could not parse list of spans from json")
-		}
-
-		for _, span := range parsedSpansV1 {
-			parsedSpans = append(parsedSpans, span.ToZipkincoreSpan())
-		}
+		parsedSpans, err = codec.ParseJsonV1(body)
 
 	case 2:
-		var parsedSpansV2 []jsoncodec.SpanV2
-		if err := json.NewDecoder(body).Decode(&parsedSpansV2); err != nil {
-			return errors.WithMessage(err, "Could not parse list of spans from json")
-		}
-
-		for _, span := range parsedSpansV2 {
-			parsedSpans = append(parsedSpans, span.ToZipkincoreSpan())
-		}
+		parsedSpans, err = codec.ParseJsonV2(body)
 
 	default:
 		return errors.New("invalid version code")
 	}
 
-	// now convert to zipkin spans
+	if err != nil {
+		return errors.WithMessage(err, "parsing spans from json")
+	}
+
 	for _, span := range parsedSpans {
-		// log.Debugf("GOT SPAN: %s (id=%x, parent=%x)", span.Name, span.GetID(), span.GetParentID())
 		spansChannel <- span
 	}
 
 	spanCount := int64(len(parsedSpans))
-	metrics.GetOrRegisterMeter("spans.parsed[type:json]", Metrics).Mark(spanCount)
+	metrics.GetOrRegisterMeter("spans.parsed[type:json]", nil).Mark(spanCount)
 
 	return nil
-}
-
-func parseSpansWithThrift(spansChannel chan<- *zipkincore.Span, body io.Reader) error {
-	pb := thrift.NewTBinaryProtocolTransport(thrift.NewStreamTransportR(body))
-	protocol := cache.NewProtocol(pb)
-
-	_, size, err := protocol.ReadListBegin()
-	if err != nil {
-		return errors.WithMessage(err, "Expect begin of list")
-	}
-
-	if size <= 0 || size > 32*1024 {
-		return errors.Errorf("Too many spans, handler will not try to read %d spans", size)
-	}
-
-	for idx := 0; idx < size; idx++ {
-		var span zipkincore.Span
-		if err := span.Read(protocol); err != nil {
-			span.BinaryAnnotations = append(span.BinaryAnnotations, &zipkincore.BinaryAnnotation{
-				Key:   "protocolVersion",
-				Value: []byte("thrift v1"),
-			})
-
-			return errors.WithMessage(err, "Could not read thrift encoded span")
-		}
-
-		// log.Debugf("GOT SPAN: %s (id=%x, parent=%x)", span.Name, span.GetID(), span.GetParentID())
-		spansChannel <- &span
-	}
-
-	metrics.GetOrRegisterMeter("spans.parsed[type:thrift]", Metrics).Mark(int64(size))
-
-	return errors.WithMessage(protocol.ReadListEnd(), "Could not read end of list")
 }

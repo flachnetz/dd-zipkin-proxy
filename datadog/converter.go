@@ -1,13 +1,13 @@
 package datadog
 
 import (
-	"github.com/openzipkin-contrib/zipkin-go-opentracing/thrift/gen-go/zipkincore"
+	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"github.com/pkg/errors"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 	"reflect"
-	"time"
+	"strings"
 	"unsafe"
 )
 
@@ -16,15 +16,15 @@ func Initialize(addr string) {
 	tracer.Start(tracer.WithAgentAddr(addr))
 }
 
-func sinkSpan(span *zipkincore.Span) tracer.Span {
-	startTime := time.Unix(0, span.GetTimestamp()*int64(time.Microsecond))
-	finishTime := startTime.Add(time.Duration(span.GetDuration()) * time.Microsecond)
-
+func sinkSpan(span proxy.Span) tracer.Span {
 	tags := map[string]interface{}{}
-	for _, an := range span.BinaryAnnotations {
-		value := string(an.Value)
 
-		switch an.Key {
+	tags[ext.ServiceName] = span.Service
+	tags[ext.SpanName] = span.Service
+	tags[ext.ResourceName] = span.Name
+
+	for key, value := range span.Tags {
+		switch key {
 		case "dd.name":
 			tags[ext.SpanName] = value
 
@@ -35,7 +35,7 @@ func sinkSpan(span *zipkincore.Span) tracer.Span {
 			tags[ext.ResourceName] = value
 
 		default:
-			tags[an.Key] = string(an.Value)
+			tags[key] = string(value)
 		}
 	}
 
@@ -44,9 +44,18 @@ func sinkSpan(span *zipkincore.Span) tracer.Span {
 		name = "unknown"
 	}
 
+	var timingTags []string
+	for timingTag := range span.Timings {
+		timingTags = append(timingTags, timingTag)
+	}
+
+	if len(timingTags) > 0 {
+		tags["timingTags"] = strings.Join(timingTags, ",")
+	}
+
 	var ddSpan ddtrace.Span = tracer.StartSpan(name, func(cfg *ddtrace.StartSpanConfig) {
-		cfg.StartTime = startTime
-		cfg.SpanID = uint64(span.ID)
+		cfg.StartTime = span.Timestamp.ToTime()
+		cfg.SpanID = uint64(span.Id)
 		cfg.Tags = tags
 	})
 
@@ -63,17 +72,17 @@ func sinkSpan(span *zipkincore.Span) tracer.Span {
 	// dereference the pointer value
 	refSpan = refSpan.Elem()
 
-	refSpan.FieldByName("TraceID").SetUint(uint64(span.TraceID))
+	refSpan.FieldByName("TraceID").SetUint(uint64(span.Trace))
 
-	if span.ParentID != nil {
-		refSpan.FieldByName("ParentID").SetUint(uint64(*span.ParentID))
+	if span.HasParent() {
+		refSpan.FieldByName("ParentID").SetUint(uint64(span.Parent))
 	}
 
 	refContext := reflect.ValueOf(context).Elem()
-	setUnexportetFieldValue(refContext.FieldByName("traceID"), uint64(span.TraceID))
-	setUnexportetFieldValue(refContext.FieldByName("spanID"), uint64(span.ID))
+	setUnexportetFieldValue(refContext.FieldByName("traceID"), uint64(span.Trace))
+	setUnexportetFieldValue(refContext.FieldByName("spanID"), uint64(span.Id))
 
-	ddSpan.Finish(tracer.FinishTime(finishTime))
+	ddSpan.Finish(tracer.FinishTime(span.Timestamp.ToTime().Add(span.Duration)))
 
 	return ddSpan
 }
@@ -89,7 +98,7 @@ func setUnexportetFieldValue(target reflect.Value, value uint64) {
 
 // Reads all zipkin spans from the given channel, converts them to datadog spans using the given converter
 // and write them into another channel.
-func Sink(zipkinSpans <-chan *zipkincore.Span) {
+func Sink(zipkinSpans <-chan proxy.Span) {
 	for span := range zipkinSpans {
 		sinkSpan(span)
 	}
