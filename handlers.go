@@ -1,6 +1,7 @@
 package zipkinproxy
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"github.com/apache/thrift/lib/go/thrift"
@@ -11,7 +12,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rcrowley/go-metrics"
 	"io"
+	"io/ioutil"
 	"net/http"
+	"os"
+	"sync"
 )
 
 func handleSpans(spans chan<- *zipkincore.Span, version int) httprouter.Handle {
@@ -55,8 +59,26 @@ func handleSpans(spans chan<- *zipkincore.Span, version int) httprouter.Handle {
 	}
 }
 
+var writeLock sync.Mutex
+
 func parseSpansWithJSON(spansChannel chan<- *zipkincore.Span, body io.Reader, version int) error {
 	var parsedSpans []*zipkincore.Span
+
+	if false {
+		data, err := ioutil.ReadAll(body)
+		if err != nil {
+			return err
+		}
+
+		writeLock.Lock()
+		fp, err := os.OpenFile("/tmp/spans.json", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		fp.Write(data)
+		fp.WriteString("\n\n\n")
+		fp.Close()
+		writeLock.Unlock()
+
+		body = bytes.NewReader(data)
+	}
 
 	switch version {
 	case 1:
@@ -111,6 +133,11 @@ func parseSpansWithThrift(spansChannel chan<- *zipkincore.Span, body io.Reader) 
 	for idx := 0; idx < size; idx++ {
 		var span zipkincore.Span
 		if err := span.Read(protocol); err != nil {
+			span.BinaryAnnotations = append(span.BinaryAnnotations, &zipkincore.BinaryAnnotation{
+				Key:   "protocolVersion",
+				Value: []byte("thrift v1"),
+			})
+
 			return errors.WithMessage(err, "Could not read thrift encoded span")
 		}
 

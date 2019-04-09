@@ -92,31 +92,30 @@ func FromSpan(span *zipkincore.Span) SpanV1 {
 
 func (span *SpanV1) ToZipkincoreSpan() *zipkincore.Span {
 	var annotations []*zipkincore.Annotation
-	if len(span.Annotations) > 0 {
-		annotations = make([]*zipkincore.Annotation, len(span.Annotations))
 
-		for idx, annotation := range span.Annotations {
-			annotations[idx] = &zipkincore.Annotation{
-				Value:     cache.String(annotation.Value),
-				Timestamp: annotation.Timestamp,
-				Host:      endpointToZipkin(annotation.Endpoint),
-			}
-		}
+	for _, annotation := range span.Annotations {
+		annotations = append(annotations, &zipkincore.Annotation{
+			Value:     cache.String(annotation.Value),
+			Timestamp: annotation.Timestamp,
+			Host:      endpointToZipkin(annotation.Endpoint),
+		})
 	}
 
 	var binaryAnnotations []*zipkincore.BinaryAnnotation
-	if len(span.BinaryAnnotations) > 0 {
-		binaryAnnotations = make([]*zipkincore.BinaryAnnotation, len(span.BinaryAnnotations))
-
-		for idx, annotation := range span.BinaryAnnotations {
-			binaryAnnotations[idx] = &zipkincore.BinaryAnnotation{
-				Key:            cache.String(annotation.Key),
-				Value:          toBytesCached(annotation.Value),
-				Host:           endpointToZipkin(annotation.Endpoint),
-				AnnotationType: zipkincore.AnnotationType_STRING,
-			}
-		}
+	for _, annotation := range span.BinaryAnnotations {
+		binaryAnnotations = append(binaryAnnotations, &zipkincore.BinaryAnnotation{
+			Key:            cache.String(annotation.Key),
+			Value:          toBytesCached(annotation.Value),
+			Host:           endpointToZipkin(annotation.Endpoint),
+			AnnotationType: zipkincore.AnnotationType_STRING,
+		})
 	}
+
+	binaryAnnotations = append(binaryAnnotations, &zipkincore.BinaryAnnotation{
+		Key:            cache.String("protocolVersion"),
+		Value:          toBytesCached("json v1"),
+		AnnotationType: zipkincore.AnnotationType_STRING,
+	})
 
 	// in root spans the traceId equals the span id.
 	parentId := span.ParentID

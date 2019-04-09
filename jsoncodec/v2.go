@@ -41,6 +41,12 @@ func (span *SpanV2) ToZipkincoreSpan() *zipkincore.Span {
 		})
 	}
 
+	binaryAnnotations = append(binaryAnnotations, &zipkincore.BinaryAnnotation{
+		Key:            cache.String("protocolVersion"),
+		Value:          toBytesCached("json v2"),
+		AnnotationType: zipkincore.AnnotationType_STRING,
+	})
+
 	// in root spans the traceId equals the span id.
 	parentId := span.ParentID
 	if span.TraceID == span.ID {
