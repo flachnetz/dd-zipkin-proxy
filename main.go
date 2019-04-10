@@ -112,8 +112,9 @@ func configureEnvironmentVariables(group *flags.Group) {
 
 func forwardSpansToChannels(source <-chan proxy.Span, targets []chan<- proxy.Span, converter SpanConverter) {
 	for span := range source {
-		for _, target := range targets {
-			if converted, err := converter(span); err == nil {
+		converted, err := converter(span)
+		if err == nil {
+			for _, target := range targets {
 				target <- converted
 			}
 		}
