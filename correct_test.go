@@ -53,7 +53,7 @@ func TestMergeSpansInPlace_BinaryAnnotations(t *testing.T) {
 	mergeSpansInPlace(&firstSpan, secondSpan)
 
 	Expect(firstSpan.Tags).To(HaveLen(1))
-	Expect(firstSpan.Tags["tag"]).To(Equal("b"))
+	Expect(firstSpan.Tags["tag"]).To(Equal("a"))
 }
 
 func TestMergeSpansInPlace_BinaryAnnotations_Reverse(t *testing.T) {
@@ -70,7 +70,7 @@ func TestMergeSpansInPlace_BinaryAnnotations_Reverse(t *testing.T) {
 	mergeSpansInPlace(&firstSpan, secondSpan)
 
 	Expect(firstSpan.Tags).To(HaveLen(1))
-	Expect(firstSpan.Tags["tag"]).To(Equal("a"))
+	Expect(firstSpan.Tags["tag"]).To(Equal("b"))
 }
 
 func TestCorrectTimings(t *testing.T) {

@@ -502,7 +502,25 @@ func mergeSpansInPlace(spanToUpdate *proxy.Span, newSpan proxy.Span) {
 	_, newSpanIsServer := newSpan.Timings["sr"]
 
 	if newSpanIsServer {
-		// merge tags, prefer the ones from spanToUpdate
+		// prefer values from newSpan (server span)
+		if newSpan.Service != "" {
+			spanToUpdate.Service = newSpan.Service
+		}
+
+		if newSpan.Name != "" {
+			spanToUpdate.Name = newSpan.Name
+		}
+
+		// merge tags, prefer the ones from newSpan
+		for key, value := range newSpan.Tags {
+			spanToUpdate.AddTag(key, value)
+		}
+
+		for key, value := range newSpan.Timings {
+			spanToUpdate.AddTiming(key, value)
+		}
+	} else {
+		// merge tags, prefer the ones from the spanToUpdate (client)
 		if spanToUpdate.Service == "" {
 			spanToUpdate.Service = newSpan.Service
 		}
@@ -535,23 +553,6 @@ func mergeSpansInPlace(spanToUpdate *proxy.Span, newSpan proxy.Span) {
 			spanToUpdate.AddTiming(key, value)
 		}
 
-	} else {
-		if newSpan.Service != "" {
-			spanToUpdate.Service = newSpan.Service
-		}
-
-		if newSpan.Name != "" {
-			spanToUpdate.Name = newSpan.Name
-		}
-
-		// merge tags, prefer the ones from newSpan
-		for key, value := range newSpan.Tags {
-			spanToUpdate.AddTag(key, value)
-		}
-
-		for key, value := range newSpan.Timings {
-			spanToUpdate.AddTiming(key, value)
-		}
 	}
 
 	metricsSpansMerged.Mark(1)

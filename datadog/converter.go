@@ -22,25 +22,8 @@ func sinkSpan(span proxy.Span) tracer.Span {
 	// name of the service, will be displayed in datadog on the overview page
 	tags[ext.ServiceName] = span.Service
 
-	// the resource of the tag will be shown "by tag"
-	tags[ext.ResourceName] = span.Name
-
-	// the name of the span as shown in flame graphs
-	tags[ext.SpanName] = span.Name
-
 	for key, value := range span.Tags {
 		tags[key] = value
-
-		switch key {
-		case "dd.name":
-			tags[ext.SpanName] = value
-
-		case "dd.service":
-			tags[ext.ServiceName] = value
-
-		case "dd.resource":
-			tags[ext.ResourceName] = value
-		}
 	}
 
 	name := span.Name
