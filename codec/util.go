@@ -13,6 +13,9 @@ func toStringCached(i interface{}) string {
 	case string:
 		return cache.String(value)
 
+	case []byte:
+		return cache.String(string(value))
+
 	case fmt.Stringer:
 		return cache.String(value.String())
 

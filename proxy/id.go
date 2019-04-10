@@ -13,11 +13,11 @@ var _ json.Marshaler = new(Id)
 var _ json.Unmarshaler = new(Id)
 
 func (id *Id) Int64() int64 {
-	if id != nil {
-		return int64(*id)
-	} else {
-		return 0
-	}
+	return int64(id.OrZero())
+}
+
+func (id *Id) Uint64() uint64 {
+	return uint64(id.OrZero())
 }
 
 func (id *Id) OrZero() Id {

@@ -19,11 +19,18 @@ func Initialize(addr string) {
 func sinkSpan(span proxy.Span) tracer.Span {
 	tags := map[string]interface{}{}
 
+	// name of the service, will be displayed in datadog on the overview page
 	tags[ext.ServiceName] = span.Service
-	tags[ext.SpanName] = span.Service
+
+	// the resource of the tag will be shown "by tag"
 	tags[ext.ResourceName] = span.Name
 
+	// the name of the span as shown in flame graphs
+	tags[ext.SpanName] = span.Name
+
 	for key, value := range span.Tags {
+		tags[key] = value
+
 		switch key {
 		case "dd.name":
 			tags[ext.SpanName] = value
@@ -33,9 +40,6 @@ func sinkSpan(span proxy.Span) tracer.Span {
 
 		case "dd.resource":
 			tags[ext.ResourceName] = value
-
-		default:
-			tags[key] = string(value)
 		}
 	}
 
@@ -55,12 +59,24 @@ func sinkSpan(span proxy.Span) tracer.Span {
 
 	var ddSpan ddtrace.Span = tracer.StartSpan(name, func(cfg *ddtrace.StartSpanConfig) {
 		cfg.StartTime = span.Timestamp.ToTime()
-		cfg.SpanID = uint64(span.Id)
+		cfg.SpanID = span.Id.Uint64()
 		cfg.Tags = tags
 	})
 
-	var context ddtrace.SpanContext = ddSpan.Context()
+	refSpan := assertIsRealSpan(ddSpan)
+	setValue(refSpan.FieldByName("TraceID"), span.Trace.Uint64())
+	setValue(refSpan.FieldByName("ParentID"), span.Parent.Uint64())
 
+	refContext := reflect.ValueOf(ddSpan.Context()).Elem()
+	setValue(refContext.FieldByName("traceID"), span.Trace.Uint64())
+	setValue(refContext.FieldByName("spanID"), span.Id.Uint64())
+
+	ddSpan.Finish(tracer.FinishTime(span.Timestamp.ToTime().Add(span.Duration)))
+
+	return ddSpan
+}
+
+func assertIsRealSpan(ddSpan ddtrace.Span) reflect.Value {
 	refSpan := reflect.ValueOf(ddSpan)
 
 	// validate type
@@ -70,24 +86,10 @@ func sinkSpan(span proxy.Span) tracer.Span {
 	}
 
 	// dereference the pointer value
-	refSpan = refSpan.Elem()
-
-	refSpan.FieldByName("TraceID").SetUint(uint64(span.Trace))
-
-	if span.HasParent() {
-		refSpan.FieldByName("ParentID").SetUint(uint64(span.Parent))
-	}
-
-	refContext := reflect.ValueOf(context).Elem()
-	setUnexportetFieldValue(refContext.FieldByName("traceID"), uint64(span.Trace))
-	setUnexportetFieldValue(refContext.FieldByName("spanID"), uint64(span.Id))
-
-	ddSpan.Finish(tracer.FinishTime(span.Timestamp.ToTime().Add(span.Duration)))
-
-	return ddSpan
+	return refSpan.Elem()
 }
 
-func setUnexportetFieldValue(target reflect.Value, value uint64) {
+func setValue(target reflect.Value, value uint64) {
 	if target.Kind() != reflect.Uint64 {
 		panic(errors.Errorf("Expect type uint64, got %s", target.Kind()))
 	}
