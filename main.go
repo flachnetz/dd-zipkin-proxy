@@ -23,8 +23,17 @@ import (
 var log = logrus.WithField("prefix", "main")
 
 type SpanConverter func(span proxy.Span) (proxy.Span, error)
+type Routing func(*httprouter.Router) http.Handler
 
 func Main(spanConverter SpanConverter) {
+	routing := func(router *httprouter.Router) http.Handler {
+		return router
+	}
+
+	MainWithRouting(routing, spanConverter)
+}
+
+func MainWithRouting(routing Routing,  spanConverter SpanConverter) {
 	var opts struct {
 		Base    startup_base.BaseOptions       `group:"Base options"`
 		HTTP    startup_http.HTTPOptions       `group:"HTTP server options"`
@@ -92,7 +101,8 @@ func Main(spanConverter SpanConverter) {
 			// we emulate the zipkin api
 			router.POST("/api/v1/spans", handleSpans(originalZipkinSpans, 1))
 			router.POST("/api/v2/spans", handleSpans(originalZipkinSpans, 2))
-			return router
+
+			return routing(router)
 		},
 	})
 }
