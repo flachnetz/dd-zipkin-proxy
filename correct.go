@@ -194,12 +194,6 @@ func (tree *tree) Roots() []proxy.Span {
 	return candidates
 }
 
-func PipeThroughSpans(in <-chan proxy.Span, out chan<- proxy.Span) {
-	for span := range in {
-		out <- span
-	}
-}
-
 func ErrorCorrectSpans(spanChannel <-chan proxy.Span, output chan<- proxy.Span) {
 	traces := make(map[Id]*tree)
 

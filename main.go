@@ -8,14 +8,10 @@ import (
 	"github.com/flachnetz/startup/startup_base"
 	"github.com/flachnetz/startup/startup_http"
 	"github.com/flachnetz/startup/startup_metrics"
-	"github.com/jessevdk/go-flags"
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/profile"
 	"github.com/sirupsen/logrus"
 	"net/http"
-
-	"regexp"
-	"strings"
 
 	_ "github.com/apache/thrift/lib/go/thrift"
 )
@@ -83,7 +79,7 @@ func MainWithRouting(routing Routing,  spanConverter SpanConverter) {
 
 	originalZipkinSpans := make(chan proxy.Span, 1024)
 	if opts.DisableSpanCorrection {
-		go PipeThroughSpans(originalZipkinSpans, proxySpans)
+		originalZipkinSpans = proxySpans
 	} else {
 		// do error correction for spans
 		go ErrorCorrectSpans(originalZipkinSpans, proxySpans)
@@ -105,19 +101,6 @@ func MainWithRouting(routing Routing,  spanConverter SpanConverter) {
 			return routing(router)
 		},
 	})
-}
-
-func configureEnvironmentVariables(group *flags.Group) {
-	for _, gr := range group.Groups() {
-		configureEnvironmentVariables(gr)
-	}
-
-	expr := regexp.MustCompile("[^A-Z0-9]+")
-	for _, op := range group.Options() {
-
-		name := strings.ToUpper(op.LongNameWithNamespace())
-		op.EnvDefaultKey = "DDZK_" + expr.ReplaceAllString(name, "_")
-	}
 }
 
 func forwardSpansToChannels(source <-chan proxy.Span, targets []chan<- proxy.Span, converter SpanConverter) {
