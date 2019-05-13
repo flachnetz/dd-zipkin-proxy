@@ -98,7 +98,7 @@ func (tree *tree) AddSpan(newSpan proxy.Span) {
 		}
 	}
 
-	if spans := tree.byParent[parentId]; spans != nil {
+	if spans := tree.byParent[parentId]; len(spans) > 0 {
 		idx := sort.Search(len(spans), func(i int) bool {
 			return newSpan.Id >= spans[i].Id
 		})
@@ -488,7 +488,7 @@ func correctTreeTimings(tree *tree, node *proxy.Span, offset time.Duration) {
 
 	} else if clientSent != 0 && serverRecv != 0 {
 		// we only know the timestamps of server + client
-		offset -= time.Duration(clientSent - serverRecv)
+		offset += time.Duration(clientSent - serverRecv)
 		node.Timestamp = clientSent
 	}
 
