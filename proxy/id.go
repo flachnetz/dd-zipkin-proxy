@@ -20,11 +20,32 @@ func (id *Id) Uint64() uint64 {
 	return uint64(id.OrZero())
 }
 
+func (id Id) IsUnknown() bool {
+	return id == 0
+}
+
 func (id *Id) OrZero() Id {
 	if id != nil {
 		return *id
 	} else {
 		return 0
+	}
+}
+
+func (id *Id) Or(other Id) Id {
+	if id != nil {
+		return *id
+	} else {
+		return other
+	}
+}
+
+func (id *Id) Uint64OrNil() *uint64 {
+	if id == nil || *id == 0 {
+		return nil
+	} else {
+		value := uint64(*id)
+		return &value
 	}
 }
 

@@ -57,6 +57,10 @@ func (span *spanV2) ToSpan() proxy.Span {
 	proxySpan.Timestamp = proxy.Microseconds(span.Timestamp)
 	proxySpan.Duration = time.Duration(span.Duration) * time.Microsecond
 
+	if proxySpan.Duration == 0 {
+		proxySpan.Duration = 1 * time.Millisecond
+	}
+
 	if span.Kind == "CLIENT" {
 		proxySpan.AddTiming("cs", proxySpan.Timestamp)
 		proxySpan.AddTiming("cr", proxySpan.Timestamp.Add(proxySpan.Duration))

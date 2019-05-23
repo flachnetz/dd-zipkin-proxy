@@ -3,6 +3,7 @@ package zipkinproxy
 import (
 	"github.com/flachnetz/dd-zipkin-proxy/datadog"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
+	"github.com/flachnetz/dd-zipkin-proxy/zipkin"
 	"github.com/flachnetz/go-admin"
 	"github.com/flachnetz/startup"
 	"github.com/flachnetz/startup/startup_base"
@@ -12,6 +13,7 @@ import (
 	"github.com/pkg/profile"
 	"github.com/sirupsen/logrus"
 	"net/http"
+	"strconv"
 
 	_ "github.com/apache/thrift/lib/go/thrift"
 )
@@ -35,55 +37,65 @@ func MainWithRouting(routing Routing,  spanConverter SpanConverter) {
 		HTTP    startup_http.HTTPOptions       `group:"HTTP server options"`
 		Metrics startup_metrics.MetricsOptions `group:"Metrics configuration"`
 
-		DisableSpanCorrection bool `long:"disable-span-correction" description:"Do not to correct the spans."`
+		ProfileCPU bool `long:"profile" description:"Enable CPU profiling"`
 
 		TraceAgent struct {
-			Host string `long:"trace-host" value:"localhost" description:"Hostname of the trace agent."`
-			Port string `long:"trace-port" value:"8126" description:"Port of the trace agent."`
+			Host string `long:"trace-host" default:"localhost" description:"Hostname of the trace agent."`
+			Port int    `long:"trace-port" default:"8126" description:"Port of the trace agent."`
 		}
 	}
-
-	defer profile.Start().Stop()
 
 	opts.Metrics.Inputs.MetricsPrefix = "zipkin.proxy"
 
 	startup.MustParseCommandLine(&opts)
 
+	if opts.ProfileCPU {
+		defer profile.Start().Stop()
+	}
+
 	var channels []chan<- proxy.Span
 
-	{
+	if true {
 		log.Info("Enable forwarding of spans to datadog trace-agent")
-		datadog.Initialize(opts.TraceAgent.Host + ":" + opts.TraceAgent.Port)
+		transport := datadog.DefaultTransport(opts.TraceAgent.Host, strconv.Itoa(opts.TraceAgent.Port))
 
 		// accept zipkin spans
 		spans := make(chan proxy.Span, 1024)
 		channels = append(channels, spans)
 
-		go datadog.Sink(spans)
+		go datadog.Sink(transport, spans)
+	}
+
+	if false {
+		log.Info("Enable forwarding to a zipkin agent")
+
+		// accept zipkin spans
+		spans := make(chan proxy.Span, 1024)
+		channels = append(channels, spans)
+
+		go zipkin.Sink(spans)
+
 	}
 
 	// a channel to store the last spans that were received
 	var buffer *SpansBuffer
 	{
-		zipkinSpans := make(chan proxy.Span, 1024)
-		channels = append(channels, zipkinSpans)
+		spans := make(chan proxy.Span, 1024)
+		channels = append(channels, spans)
 
 		// just keep references to previous spans.
 		buffer = NewSpansBuffer(2048)
-		go buffer.ReadFrom(zipkinSpans)
+		go buffer.ReadFrom(spans)
 	}
 
 	// multiplex input channel to all the target channels
-	proxySpans := make(chan proxy.Span, 16)
-	go forwardSpansToChannels(proxySpans, channels, spanConverter)
+	processedSpans := make(chan proxy.Span, 128)
+	go forwardSpansToChannels(processedSpans, channels, spanConverter)
 
-	originalZipkinSpans := make(chan proxy.Span, 1024)
-	if opts.DisableSpanCorrection {
-		originalZipkinSpans = proxySpans
-	} else {
-		// do error correction for spans
-		go ErrorCorrectSpans(originalZipkinSpans, proxySpans)
-	}
+	inputSpans := make(chan proxy.Span, 1024)
+	go ErrorCorrectSpans(inputSpans, processedSpans, CorrectionOptions{
+		NoCorrectTreeTimings: false,
+	})
 
 	opts.HTTP.Serve(startup_http.Config{
 		Name: "dd-zipkin-proxy",
@@ -95,9 +107,8 @@ func MainWithRouting(routing Routing,  spanConverter SpanConverter) {
 
 		Routing: func(router *httprouter.Router) http.Handler {
 			// we emulate the zipkin api
-			router.POST("/api/v1/spans", handleSpans(originalZipkinSpans, 1))
-			router.POST("/api/v2/spans", handleSpans(originalZipkinSpans, 2))
-
+			router.POST("/api/v1/spans", handleSpans(inputSpans, 1))
+			router.POST("/api/v2/spans", handleSpans(inputSpans, 2))
 			return routing(router)
 		},
 	})
@@ -106,10 +117,12 @@ func MainWithRouting(routing Routing,  spanConverter SpanConverter) {
 func forwardSpansToChannels(source <-chan proxy.Span, targets []chan<- proxy.Span, converter SpanConverter) {
 	for span := range source {
 		converted, err := converter(span)
-		if err == nil {
-			for _, target := range targets {
-				target <- converted
-			}
+		if err != nil {
+			continue
+		}
+
+		for _, target := range targets {
+			target <- converted
 		}
 	}
 }

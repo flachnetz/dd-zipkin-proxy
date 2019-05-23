@@ -1,90 +1,110 @@
 package datadog
 
 import (
+	"encoding/json"
+	"github.com/DataDog/dd-trace-go/tracer"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
-	"github.com/pkg/errors"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/ext"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
-	"reflect"
-	"strings"
-	"unsafe"
+	"github.com/sirupsen/logrus"
+	"os"
+	"time"
 )
 
-func Initialize(addr string) {
-	// sets the global instance
-	tracer.Start(tracer.WithAgentAddr(addr))
+var log = logrus.WithField("prefix", "datadog")
+var logTraces = os.Getenv("DD_LOG_TRACES") == "true"
+
+const flushInterval = 2 * time.Second
+const flushSpanCount = 1000
+
+// Create a new default transport.
+func DefaultTransport(hostname, port string) tracer.Transport {
+	return tracer.NewTransport(hostname, port)
 }
 
-func sinkSpan(span proxy.Span) tracer.Span {
-	tags := map[string]interface{}{}
+func submitTraces(transport tracer.Transport, spansByTrace <-chan map[uint64][]*tracer.Span) {
+	for buffer := range spansByTrace {
+		count := 0
 
-	// name of the service, will be displayed in datadog on the overview page
-	tags[ext.ServiceName] = span.Service
+		// the transport expects a list of list, where each sub-list contains only
+		// spans of the same trace.
+		var traces [][]*tracer.Span
+		for _, spans := range buffer {
+			count += len(spans)
+			traces = append(traces, spans)
+		}
 
-	for key, value := range span.Tags {
-		tags[key] = value
+		// if we got traces, send them!
+		if len(traces) > 0 {
+			log.Infof("Sending %d spans in traces %d traces", count, len(traces))
+
+			if logTraces {
+				val, _ := json.MarshalIndent(traces, "", "  ")
+				log.Info(string(val))
+			} else {
+				if _, err := transport.SendTraces(traces); err != nil {
+					log.WithError(err).Warn("Error reporting spans to datadog")
+				}
+			}
+		}
 	}
-
-	name := span.Name
-	if name == "" {
-		name = "unknown"
-	}
-
-	var timingTags []string
-	for timingTag := range span.Timings {
-		timingTags = append(timingTags, timingTag)
-	}
-
-	if len(timingTags) > 0 {
-		tags["timingTags"] = strings.Join(timingTags, ",")
-	}
-
-	var ddSpan ddtrace.Span = tracer.StartSpan(name, func(cfg *ddtrace.StartSpanConfig) {
-		cfg.StartTime = span.Timestamp.ToTime()
-		cfg.SpanID = span.Id.Uint64()
-		cfg.Tags = tags
-	})
-
-	refSpan := assertIsRealSpan(ddSpan)
-	setValue(refSpan.FieldByName("TraceID"), span.Trace.Uint64())
-	setValue(refSpan.FieldByName("ParentID"), span.Parent.Uint64())
-
-	refContext := reflect.ValueOf(ddSpan.Context()).Elem()
-	setValue(refContext.FieldByName("traceID"), span.Trace.Uint64())
-	setValue(refContext.FieldByName("spanID"), span.Id.Uint64())
-
-	ddSpan.Finish(tracer.FinishTime(span.Timestamp.ToTime().Add(span.Duration)))
-
-	return ddSpan
 }
 
-func assertIsRealSpan(ddSpan ddtrace.Span) reflect.Value {
-	refSpan := reflect.ValueOf(ddSpan)
+func Sink(transport tracer.Transport, spans <-chan proxy.Span) {
+	ticker := time.NewTicker(flushInterval)
+	defer ticker.Stop()
 
-	// validate type
-	refSpanType := refSpan.Type()
-	if refSpanType.Kind() != reflect.Ptr || refSpanType.String() != "*tracer.span" {
-		panic(errors.Errorf("Expected Span of type *tracer.span, got '%s'", refSpanType.String()))
-	}
+	count := 0
+	byTrace := make(map[uint64][]*tracer.Span)
 
-	// dereference the pointer value
-	return refSpan.Elem()
-}
+	groupedSpans := make(chan map[uint64][]*tracer.Span, 4)
+	defer close(groupedSpans)
 
-func setValue(target reflect.Value, value uint64) {
-	if target.Kind() != reflect.Uint64 {
-		panic(errors.Errorf("Expect type uint64, got %s", target.Kind()))
-	}
+	// send the spans in background
+	go submitTraces(transport, groupedSpans)
 
-	ptr := unsafe.Pointer(target.UnsafeAddr())
-	*(*uint64)(ptr) = value
-}
+	for {
+		var flush bool
 
-// Reads all zipkin spans from the given channel, converts them to datadog spans using the given converter
-// and write them into another channel.
-func Sink(zipkinSpans <-chan proxy.Span) {
-	for span := range zipkinSpans {
-		sinkSpan(span)
+		select {
+		case span, ok := <-spans:
+			if !ok {
+				log.Info("Channel closed, stopping sender")
+				return
+			}
+
+			converted := &tracer.Span{
+				Name:     span.Name,
+				Resource: span.Tags["dd.resource"],
+				Service:  span.Service,
+
+				Start:    span.Timestamp.ToTime().UnixNano(),
+				Duration: span.Duration.Nanoseconds(),
+
+				SpanID:   span.Id.Uint64(),
+				TraceID:  span.Trace.Uint64(),
+				ParentID: span.Parent.Uint64(),
+
+				Meta:    span.Tags,
+				Sampled: true,
+			}
+
+			count++
+			byTrace[converted.TraceID] = append(byTrace[converted.TraceID], converted)
+			flush = count >= flushSpanCount
+
+		case <-ticker.C:
+			flush = true
+		}
+
+		if flush && count > 0 {
+			select {
+			case groupedSpans <- byTrace:
+			default:
+				log.Warnf("Could not send %d traces to datadog, sending would block.", len(byTrace))
+			}
+
+			// reset collection
+			count = 0
+			byTrace = make(map[uint64][]*tracer.Span)
+		}
 	}
 }

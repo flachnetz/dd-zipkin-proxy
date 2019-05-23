@@ -70,5 +70,7 @@ func convertThriftSpan(span zipkincore.Span) proxy.Span {
 
 	proxySpan.AddTag("protocolVersion", "thrift v1")
 
+	fillInTimestamp(&proxySpan)
+
 	return proxySpan
 }

@@ -20,10 +20,6 @@ type Span struct {
 }
 
 func NewSpan(name string, trace, id, parent Id) Span {
-	if parent == id || trace == id {
-		parent = 0
-	}
-
 	return Span{
 		Id:     id,
 		Parent: parent,
@@ -32,8 +28,16 @@ func NewSpan(name string, trace, id, parent Id) Span {
 	}
 }
 
+func NewRootSpan(name string, trace, id Id) Span {
+	return NewSpan(name, trace, id, trace)
+}
+
 func (span *Span) HasParent() bool {
-	return span.Parent != 0
+	return !span.IsRoot()
+}
+
+func (span *Span) IsRoot() bool {
+	return span.Parent == span.Id
 }
 
 func (span *Span) AddTag(key, value string) {

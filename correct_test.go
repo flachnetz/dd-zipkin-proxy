@@ -15,14 +15,16 @@ func TestTree(t *testing.T) {
 	firstSpan := proxy.Span{Id: 1}
 	secondSpan := proxy.Span{Id: 2, Parent: firstSpan.Id}
 
-	tree := newTree()
+	tree := newTree(1)
 	tree.AddSpan(firstSpan)
 	tree.AddSpan(secondSpan)
 
 	Expect(tree.ChildrenOf(firstSpan.Id)).To(HaveLen(1))
-	Expect(tree.ChildrenOf(firstSpan.Id)[0]).To(Equal(secondSpan))
+	Expect(tree.ChildrenOf(firstSpan.Id)[0]).To(Equal(&secondSpan))
 
 	Expect(tree.Root()).To(Equal(&firstSpan))
+	Expect(tree.Roots()).To(HaveLen(1))
+	Expect(tree.Roots()[0]).To(Equal(&firstSpan))
 }
 
 func TestMergeSpansInPlace_Annotations(t *testing.T) {
@@ -82,7 +84,7 @@ func TestCorrectTimings(t *testing.T) {
 
 		client, sharedClient, sharedServer, server := threeSpans(100, 200, 1110, 1190)
 
-		tree := newTree()
+		tree := newTree(client.Trace)
 
 		if rand.Float32() < 0.5 {
 			sharedServer.Parent = 0
@@ -111,19 +113,19 @@ func TestCorrectTimings(t *testing.T) {
 }
 
 func threeSpans(cs, cr, sr, ss proxy.Timestamp) (proxy.Span, proxy.Span, proxy.Span, proxy.Span) {
-	client := proxy.Span{Id: 1, Timestamp: cs, Duration: time.Duration(cr - cs)}
+	client := proxy.Span{Id: 1, Trace: 1, Parent: 1, Timestamp: cs, Duration: time.Duration(cr - cs)}
 	client.AddTiming("cs", cs)
 	client.AddTiming("cr", cr)
 
-	sharedClient := proxy.Span{Id: 2, Parent: client.Id, Timestamp: cs, Duration: time.Duration(cr - cs)}
+	sharedClient := proxy.Span{Id: 2, Trace: 1, Parent: client.Id, Timestamp: cs, Duration: time.Duration(cr - cs)}
 	sharedClient.AddTiming("cs", cs)
 	sharedClient.AddTiming("cr", cr)
 
-	sharedServer := proxy.Span{Id: 2, Parent: client.Id, Timestamp: sr, Duration: time.Duration(ss - sr)}
+	sharedServer := proxy.Span{Id: 2, Trace: 1, Parent: client.Id, Timestamp: sr, Duration: time.Duration(ss - sr)}
 	sharedServer.AddTiming("sr", sr)
 	sharedServer.AddTiming("ss", ss)
 
-	server := proxy.Span{Id: 3, Parent: sharedServer.Id, Timestamp: sr, Duration: time.Duration(ss - sr)}
+	server := proxy.Span{Id: 3, Trace: 1, Parent: sharedServer.Id, Timestamp: sr, Duration: time.Duration(ss - sr)}
 	server.AddTiming("sr", sr)
 	server.AddTiming("ss", ss)
 

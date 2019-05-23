@@ -43,158 +43,117 @@ func init() {
 type none struct{}
 
 type tree struct {
+	traceId Id
+
 	// parent-id to span
-	byParent map[Id][]proxy.Span
-	byId     map[Id]Id
+	// byParent map[Id][]proxy.Span
+
+	// child-id to parent-id
+	// byChild map[Id]Id
+
+	// spans not yet belonging to any parent
+	spans SpanSlice
 
 	started   time.Time
 	updated   time.Time
 	nodeCount uint16
 }
 
-func newTree() *tree {
+func newTree(traceId Id) *tree {
 	now := time.Now()
 	return &tree{
-		byParent: map[Id][]proxy.Span{},
-		byId:     map[Id]Id{},
-		started:  now,
-		updated:  now,
+		traceId: traceId,
+		started: now,
+		updated: now,
 	}
+}
+
+func (tree *tree) Spans() []proxy.Span {
+	return tree.spans
 }
 
 func (tree *tree) AddSpan(newSpan proxy.Span) {
-	parentId := newSpan.Parent
-
-	existingParent, existing := tree.byId[newSpan.Id]
-	if existing {
-		// We already have a node with this id.
-		// If the parent we already know about is more specific, we will use
-		// that one to store our node.
-		if existingParent != 0 && parentId == 0 {
-			parentId = existingParent
-		}
-
-		if existingParent == 0 && parentId != 0 {
-			spans := tree.byParent[0]
-
-			idx := sort.Search(len(spans), func(i int) bool {
-				return newSpan.Id >= spans[i].Id
-			})
-
-			if idx < len(spans) && spans[idx].Id == newSpan.Id {
-				previousSpan := spans[idx]
-				previousSpan.Parent = parentId
-				mergeSpansInPlace(&previousSpan, newSpan)
-
-				// if we already put the node into the root, but now we would like
-				// to put it somewhere else, we need to remove it from the root now.
-				tree.byParent[0] = append(spans[:idx], spans[idx+1:]...)
-				tree.byParent[parentId] = insertSpan(tree.byParent[parentId], -1, previousSpan)
-
-				tree.byId[newSpan.Id] = parentId
-				tree.updated = time.Now()
-				return
-			}
-		}
-	}
-
-	if spans := tree.byParent[parentId]; len(spans) > 0 {
-		idx := sort.Search(len(spans), func(i int) bool {
-			return newSpan.Id >= spans[i].Id
-		})
-
-		if idx < len(spans) && spans[idx].Id == newSpan.Id {
-			// update the existing span with the same id
-			mergeSpansInPlace(&spans[idx], newSpan)
-		} else {
-			// a new span, just add it to the list of spans
-			tree.byParent[parentId] = insertSpan(spans, idx, newSpan)
-			tree.nodeCount++
-		}
-	} else {
-		// no span with this parent, we can just add it
-		tree.byParent[parentId] = []proxy.Span{newSpan}
-		tree.nodeCount++
-	}
-
-	tree.byId[newSpan.Id] = parentId
 	tree.updated = time.Now()
+
+	// get a reference to the span if it already exists
+	span := tree.spans.GetSpanRef(newSpan.Id)
+	if span == nil {
+		tree.spans = tree.spans.Append(newSpan)
+		tree.nodeCount++
+		return
+	}
+
+	if span.Parent.IsUnknown() {
+		span.Parent = newSpan.Parent
+	}
+
+	mergeSpansInPlace(span, newSpan)
+}
+
+func (tree *tree) ByParent() map[Id][]*proxy.Span {
+	result := map[Id][]*proxy.Span{}
+
+	for idx := range tree.spans {
+		span := &tree.spans[idx]
+		result[span.Parent] = append(result[span.Parent], span)
+	}
+
+	return result
 }
 
 func (tree *tree) GetSpan(spanId Id) *proxy.Span {
-	spans := tree.byParent[tree.byId[spanId]]
-	idx := sort.Search(len(spans), func(i int) bool {
-		return spanId >= spans[i].Id
-	})
-
-	if idx < len(spans) && spans[idx].Id == spanId {
-		return &spans[idx]
-	}
-
-	return nil
-}
-
-func insertSpan(spans []proxy.Span, idx int, span proxy.Span) []proxy.Span {
-	if idx == -1 {
-		idx = sort.Search(len(spans), func(i int) bool {
-			return span.Id >= spans[i].Id
-		})
-	}
-
-	spans = append(spans, proxy.Span{})
-	copy(spans[idx+1:], spans[idx:])
-	spans[idx] = span
-	return spans
+	return tree.spans.GetSpanRef(spanId)
 }
 
 // gets the root of this tree, or nil, if no root exists.
 func (tree *tree) Root() *proxy.Span {
-	nodes := tree.byParent[0]
-	if len(nodes) == 1 {
-		return &nodes[0]
-	} else {
-		return nil
-	}
+	return tree.spans.GetSpanRef(tree.traceId)
 }
 
 // gets the children of the given span in this tree.
-func (tree *tree) ChildrenOf(spanId Id) []proxy.Span {
-	return tree.byParent[spanId]
-}
-
-// gets the parent of the given span in this tree.
-func (tree *tree) ParentOf(span proxy.Span) *proxy.Span {
-	if span.Parent == 0 {
-		return nil
-	}
-
-	for _, nodes := range tree.byParent {
-		for idx := range nodes {
-			if nodes[idx].Id == span.Parent {
-				return &nodes[idx]
-			}
+func (tree *tree) ChildrenOf(spanId Id) []*proxy.Span {
+	var children []*proxy.Span
+	for idx := range tree.spans {
+		span := &tree.spans[idx]
+		if span.Parent == spanId && !span.IsRoot() {
+			children = append(children, span)
 		}
 	}
 
-	return nil
+	return children
 }
 
-func (tree *tree) Roots() []proxy.Span {
-	// map nodes by id
-	var candidates []proxy.Span
+func (tree *tree) Roots() []*proxy.Span {
+	byId := map[Id]struct{}{}
+	for _, span := range tree.spans {
+		byId[span.Id] = struct{}{}
+	}
 
-	for _, nodes := range tree.byParent {
-		for _, node := range nodes {
-			if _, ok := tree.byId[node.Parent]; !ok {
-				candidates = append(candidates, node)
-			}
+	// map nodes by id
+	var candidates []*proxy.Span
+
+	for idx := range tree.spans {
+		span := &tree.spans[idx]
+
+		if span.IsRoot() {
+			candidates = append(candidates, span)
+			continue
+		}
+
+		if _, ok := byId[span.Parent]; !ok {
+			candidates = append(candidates, span)
+			continue
 		}
 	}
 
 	return candidates
 }
 
-func ErrorCorrectSpans(spanChannel <-chan proxy.Span, output chan<- proxy.Span) {
+type CorrectionOptions struct {
+	NoCorrectTreeTimings bool
+}
+
+func ErrorCorrectSpans(inputCh <-chan proxy.Span, outputCh chan<- proxy.Span, opts CorrectionOptions) {
 	traces := make(map[Id]*tree)
 
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -205,7 +164,7 @@ func ErrorCorrectSpans(spanChannel <-chan proxy.Span, output chan<- proxy.Span) 
 
 	for {
 		select {
-		case span, ok := <-spanChannel:
+		case span, ok := <-inputCh:
 			// stream was closed, stop now
 			if !ok {
 				return
@@ -219,19 +178,19 @@ func ErrorCorrectSpans(spanChannel <-chan proxy.Span, output chan<- proxy.Span) 
 
 			trace := traces[span.Trace]
 			if trace == nil {
-				trace = newTree()
+				trace = newTree(span.Trace)
 				traces[span.Trace] = trace
 			}
 
 			trace.AddSpan(span)
 
 		case <-ticker.C:
-			finishTraces(traces, blacklistedTraces, output)
+			finishTraces(traces, blacklistedTraces, outputCh, opts)
 		}
 	}
 }
 
-func finishTraces(traces map[Id]*tree, blacklist map[Id]none, output chan<- proxy.Span) {
+func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- proxy.Span, opts CorrectionOptions) {
 	var spanCount int64
 
 	deadlineUpdate := time.Now().Add(-bufferTime)
@@ -275,6 +234,9 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, output chan<- prox
 			// add a fake root to the span and look for a new root span
 			trace.AddSpan(createFakeRoot(roots))
 			roots = trace.Roots()
+
+			log.Debugf("Missing root, injecting fake-root span")
+			debugPrintTrace(trace)
 		}
 
 		if len(roots) != 1 {
@@ -282,19 +244,19 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, output chan<- prox
 			log.Debugf("No unique root for trace %x with %d spans", traceID, trace.nodeCount)
 			debugPrintTrace(trace)
 
-			// send it anyways
 			metricsTracesWithoutRoot.Mark(1)
 			continue
 		}
 
-		correctTreeTimings(trace, &roots[0], 0)
+		if !opts.NoCorrectTreeTimings {
+			correctTreeTimings(trace, roots[0], 0)
+		}
+
 		metricsTracesCorrected.Mark(1)
 
 		// send all the spans to the output channel
-		for _, spans := range trace.byParent {
-			for _, span := range spans {
-				output <- span
-			}
+		for _, span := range trace.Spans() {
+			outputCh <- span
 		}
 
 		metricsTracesFinished.Mark(1)
@@ -321,7 +283,7 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, output chan<- prox
 	}
 }
 
-func createFakeRoot(spans []proxy.Span) proxy.Span {
+func createFakeRoot(spans []*proxy.Span) proxy.Span {
 	firstTimestamp := spans[0].Timestamp
 	lastTimestamp := spans[0].Timestamp.Add(spans[0].Duration)
 
@@ -336,14 +298,16 @@ func createFakeRoot(spans []proxy.Span) proxy.Span {
 		}
 	}
 
-	root := proxy.NewSpan("fake-root", spans[0].Trace, spans[0].Parent, 0)
+	root := proxy.NewRootSpan("fake-root", spans[0].Trace, spans[0].Parent)
+
 	root.Service = "fake-root"
 	root.Timestamp = firstTimestamp
 	root.Duration = time.Duration(lastTimestamp - firstTimestamp)
+
 	return root
 }
 
-func allTheSameParent(spans []proxy.Span) bool {
+func allTheSameParent(spans []*proxy.Span) bool {
 	for _, span := range spans {
 		if spans[0].Parent != span.Parent {
 			return false
@@ -366,9 +330,9 @@ func debugPrintTrace(trace *tree) {
 		return
 	}
 
-	var printNode func(proxy.Span, int)
+	var printNode func(*proxy.Span, int)
 
-	printNode = func(node proxy.Span, level int) {
+	printNode = func(node *proxy.Span, level int) {
 		space := strings.Repeat("  ", level)
 
 		log.Warnf("%s%s [%x] (%s, %s, parent=%x)", space, node.Name, node.Id,
@@ -488,7 +452,7 @@ func correctTreeTimings(tree *tree, node *proxy.Span, offset time.Duration) {
 
 	children := tree.ChildrenOf(node.Id)
 	for idx := range children {
-		correctTreeTimings(tree, &children[idx], offset)
+		correctTreeTimings(tree, children[idx], offset)
 	}
 }
 
@@ -546,8 +510,37 @@ func mergeSpansInPlace(spanToUpdate *proxy.Span, newSpan proxy.Span) {
 		for key, value := range clientTimings {
 			spanToUpdate.AddTiming(key, value)
 		}
-
 	}
 
 	metricsSpansMerged.Mark(1)
+}
+
+type SpanSlice []proxy.Span
+
+func (spans SpanSlice) GetSpanRef(spanId Id) *proxy.Span {
+	idx := sort.Search(len(spans), func(i int) bool {
+		return spanId >= spans[i].Id
+	})
+
+	if idx < len(spans) && spans[idx].Id == spanId {
+		return &spans[idx]
+	}
+
+	return nil
+}
+
+func (spans SpanSlice) Append(span proxy.Span) []proxy.Span {
+	idx := sort.Search(len(spans), func(i int) bool {
+		return span.Id >= spans[i].Id
+	})
+
+	spans = append(spans, proxy.Span{})
+	copy(spans[idx+1:], spans[idx:])
+	spans[idx] = span
+
+	return spans
+}
+
+func (spans SpanSlice) HasSpan(id proxy.Id) bool {
+	return spans.GetSpanRef(id) != nil
 }
