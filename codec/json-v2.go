@@ -45,14 +45,14 @@ func (span *spanV2) ToSpan() proxy.Span {
 		span.TraceID, span.ID, span.ParentID.OrZero())
 
 	if span.Endpoint != nil {
-		proxySpan.Service = span.Endpoint.ServiceName
+		proxySpan.Service = cache.String(span.Endpoint.ServiceName)
 	}
 
 	for key, value := range span.Tags {
 		proxySpan.AddTag(cache.String(key), cache.String(value))
 	}
 
-	proxySpan.AddTag("protocolVersion", "json v2")
+	proxySpan.AddTag(tagProtocolVersion, tagJsonV2)
 
 	proxySpan.Timestamp = proxy.Microseconds(span.Timestamp)
 	proxySpan.Duration = time.Duration(span.Duration) * time.Microsecond
@@ -62,13 +62,13 @@ func (span *spanV2) ToSpan() proxy.Span {
 	}
 
 	if span.Kind == "CLIENT" {
-		proxySpan.AddTiming("cs", proxySpan.Timestamp)
-		proxySpan.AddTiming("cr", proxySpan.Timestamp.Add(proxySpan.Duration))
+		proxySpan.AddTiming(tagCS, proxySpan.Timestamp)
+		proxySpan.AddTiming(tagCR, proxySpan.Timestamp.Add(proxySpan.Duration))
 	}
 
 	if span.Kind == "SERVER" {
-		proxySpan.AddTiming("sr", proxySpan.Timestamp)
-		proxySpan.AddTiming("ss", proxySpan.Timestamp.Add(proxySpan.Duration))
+		proxySpan.AddTiming(tagSR, proxySpan.Timestamp)
+		proxySpan.AddTiming(tagSS, proxySpan.Timestamp.Add(proxySpan.Duration))
 	}
 
 	return proxySpan

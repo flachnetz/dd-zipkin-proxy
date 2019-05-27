@@ -94,8 +94,8 @@ func ByteSlice(value []byte) []byte {
 	return byteSlice(false, value)
 }
 
-func StringForByteSlice(value []byte) string {
-	value = byteSlice(true, value)
+func StringForByteSliceNoCopy(value []byte) string {
+	value = byteSlice(false, value)
 	return byteSliceToString(value)
 }
 
@@ -146,9 +146,9 @@ func byteSliceToString(bytes []byte) string {
 }
 
 func RegisterCacheMetrics(m metrics.Registry) {
-	m.Register("binary.cache.hit.count", metricHitCount)
-	m.Register("binary.cache.miss.count", metricMissCount)
-	m.Register("binary.read.size", metricReadBinarySize)
+	_ = m.Register("binary.cache.hit.count", metricHitCount)
+	_ = m.Register("binary.cache.miss.count", metricMissCount)
+	_ = m.Register("binary.read.size", metricReadBinarySize)
 
 	metrics.NewRegisteredFunctionalGaugeFloat64("binary.cache.hit.rate", m, func() float64 {
 		hitCount := metricHitCount.Rate1()

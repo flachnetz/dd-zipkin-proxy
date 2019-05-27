@@ -61,22 +61,26 @@ func (span *spanV1) ToSpan() proxy.Span {
 		span.TraceID, span.ID, span.ParentID.OrZero())
 
 	for _, annotation := range span.Annotations {
-		proxySpan.AddTiming(annotation.Value, proxy.Microseconds(annotation.Timestamp))
+		proxySpan.AddTiming(
+			cache.String(annotation.Value),
+			proxy.Microseconds(annotation.Timestamp))
 
 		if annotation.Endpoint != nil && proxySpan.Service == "" {
-			proxySpan.Service = annotation.Endpoint.ServiceName
+			proxySpan.Service = cache.String(annotation.Endpoint.ServiceName)
 		}
 	}
 
 	for _, annotation := range span.BinaryAnnotations {
-		proxySpan.AddTag(cache.String(annotation.Key), toStringCached(annotation.Value))
+		proxySpan.AddTag(
+			cache.String(annotation.Key),
+			toStringCached(annotation.Value))
 
 		if annotation.Endpoint != nil && proxySpan.Service == "" {
-			proxySpan.Service = annotation.Endpoint.ServiceName
+			proxySpan.Service = cache.String(annotation.Endpoint.ServiceName)
 		}
 	}
 
-	proxySpan.AddTag("protocolVersion", "json v1")
+	proxySpan.AddTag(tagProtocolVersion, tagJsonV1)
 
 	if span.Timestamp != nil {
 		proxySpan.Timestamp = proxy.Microseconds(*span.Timestamp)
@@ -92,15 +96,15 @@ func (span *spanV1) ToSpan() proxy.Span {
 }
 
 func fillInTimestamp(proxySpan *proxy.Span) {
-	sr := proxySpan.Timings["sr"]
-	ss := proxySpan.Timings["ss"]
+	sr := proxySpan.Timings[tagSR]
+	ss := proxySpan.Timings[tagSS]
 	if sr > 0 && ss > 0 {
 		proxySpan.Timestamp = sr
 		proxySpan.Duration = time.Duration(ss - sr)
 	}
 
-	cs := proxySpan.Timings["cs"]
-	cr := proxySpan.Timings["cr"]
+	cs := proxySpan.Timings[tagCS]
+	cr := proxySpan.Timings[tagSR]
 	if cs > 0 && cr > 0 {
 		proxySpan.Timestamp = cs
 		proxySpan.Duration = time.Duration(cr - cs)

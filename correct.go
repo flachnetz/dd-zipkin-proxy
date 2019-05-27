@@ -12,7 +12,7 @@ import (
 type Id = proxy.Id
 
 const bufferTime = 10 * time.Second
-const maxSpans = 100000
+const maxSpans = 75000
 
 var metricsSpansMerged metrics.Meter
 var metricsTracesFinished metrics.Meter

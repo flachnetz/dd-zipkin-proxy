@@ -1,6 +1,7 @@
 package zipkinproxy
 
 import (
+	"github.com/flachnetz/dd-zipkin-proxy/cache"
 	"github.com/flachnetz/dd-zipkin-proxy/datadog"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"github.com/flachnetz/dd-zipkin-proxy/zipkin"
@@ -11,6 +12,7 @@ import (
 	"github.com/flachnetz/startup/startup_metrics"
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/profile"
+	"github.com/rcrowley/go-metrics"
 	"github.com/sirupsen/logrus"
 	"net/http"
 	"strconv"
@@ -31,7 +33,7 @@ func Main(spanConverter SpanConverter) {
 	MainWithRouting(routing, spanConverter)
 }
 
-func MainWithRouting(routing Routing,  spanConverter SpanConverter) {
+func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 	var opts struct {
 		Base    startup_base.BaseOptions       `group:"Base options"`
 		HTTP    startup_http.HTTPOptions       `group:"HTTP server options"`
@@ -49,6 +51,8 @@ func MainWithRouting(routing Routing,  spanConverter SpanConverter) {
 
 	startup.MustParseCommandLine(&opts)
 
+	cache.RegisterCacheMetrics(metrics.DefaultRegistry)
+
 	if opts.ProfileCPU {
 		defer profile.Start().Stop()
 	}
@@ -60,7 +64,7 @@ func MainWithRouting(routing Routing,  spanConverter SpanConverter) {
 		transport := datadog.DefaultTransport(opts.TraceAgent.Host, strconv.Itoa(opts.TraceAgent.Port))
 
 		// accept zipkin spans
-		spans := make(chan proxy.Span, 1024)
+		spans := make(chan proxy.Span, 256)
 		channels = append(channels, spans)
 
 		go datadog.Sink(transport, spans)
@@ -70,7 +74,7 @@ func MainWithRouting(routing Routing,  spanConverter SpanConverter) {
 		log.Info("Enable forwarding to a zipkin agent")
 
 		// accept zipkin spans
-		spans := make(chan proxy.Span, 1024)
+		spans := make(chan proxy.Span, 256)
 		channels = append(channels, spans)
 
 		go zipkin.Sink(spans)
@@ -80,7 +84,7 @@ func MainWithRouting(routing Routing,  spanConverter SpanConverter) {
 	// a channel to store the last spans that were received
 	var buffer *SpansBuffer
 	{
-		spans := make(chan proxy.Span, 1024)
+		spans := make(chan proxy.Span, 256)
 		channels = append(channels, spans)
 
 		// just keep references to previous spans.
@@ -89,10 +93,10 @@ func MainWithRouting(routing Routing,  spanConverter SpanConverter) {
 	}
 
 	// multiplex input channel to all the target channels
-	processedSpans := make(chan proxy.Span, 128)
+	processedSpans := make(chan proxy.Span, 64)
 	go forwardSpansToChannels(processedSpans, channels, spanConverter)
 
-	inputSpans := make(chan proxy.Span, 1024)
+	inputSpans := make(chan proxy.Span, 256)
 	go ErrorCorrectSpans(inputSpans, processedSpans, CorrectionOptions{
 		NoCorrectTreeTimings: false,
 	})
