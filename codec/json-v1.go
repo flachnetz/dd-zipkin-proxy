@@ -60,8 +60,7 @@ func (span *spanV1) ToSpan() proxy.Span {
 		span.TraceID, span.ID, span.ParentID.OrZero())
 
 	for _, annotation := range span.Annotations {
-		proxySpan.AddTiming(
-			cache.String(annotation.Value),
+		proxySpan.AddTiming(annotation.Value,
 			proxy.Microseconds(annotation.Timestamp))
 
 		if annotation.Endpoint != nil && proxySpan.Service == "" {
@@ -95,15 +94,15 @@ func (span *spanV1) ToSpan() proxy.Span {
 }
 
 func fillInTimestamp(proxySpan *proxy.Span) {
-	sr := proxySpan.Timings[tagSR]
-	ss := proxySpan.Timings[tagSS]
+	sr := proxySpan.Timings.SR
+	ss := proxySpan.Timings.SS
 	if sr > 0 && ss > 0 {
 		proxySpan.Timestamp = sr
 		proxySpan.Duration = time.Duration(ss - sr)
 	}
 
-	cs := proxySpan.Timings[tagCS]
-	cr := proxySpan.Timings[tagSR]
+	cs := proxySpan.Timings.CS
+	cr := proxySpan.Timings.CR
 	if cs > 0 && cr > 0 {
 		proxySpan.Timestamp = cs
 		proxySpan.Duration = time.Duration(cr - cs)

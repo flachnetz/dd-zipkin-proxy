@@ -15,8 +15,16 @@ type Span struct {
 	Timestamp Timestamp     `json:"timestamp"`
 	Duration  time.Duration `json:"duration"`
 
-	Tags    map[string]string    `json:"tags,omitempty"`
-	Timings map[string]Timestamp `json:"timings,omitempty"`
+	Tags map[string]string `json:"tags,omitempty"`
+
+	Timings Timings `json:"timings"`
+}
+
+type Timings struct {
+	CS Timestamp `json:"cs,omitempty"`
+	CR Timestamp `json:"cr,omitempty"`
+	SS Timestamp `json:"ss,omitempty"`
+	SR Timestamp `json:"sr,omitempty"`
 }
 
 func NewSpan(name string, trace, id, parent Id) Span {
@@ -49,9 +57,14 @@ func (span *Span) AddTag(key, value string) {
 }
 
 func (span *Span) AddTiming(key string, ns Timestamp) {
-	if span.Timings == nil {
-		span.Timings = map[string]Timestamp{}
+	switch key {
+	case "cs":
+		span.Timings.CS = ns
+	case "cr":
+		span.Timings.CR = ns
+	case "sr":
+		span.Timings.SR = ns
+	case "ss":
+		span.Timings.SS = ns
 	}
-
-	span.Timings[key] = ns
 }

@@ -31,14 +31,15 @@ func TestMergeSpansInPlace_Annotations(t *testing.T) {
 	RegisterTestingT(t)
 
 	firstSpan := proxy.Span{}
-	firstSpan.AddTiming("first", 0)
+	firstSpan.AddTiming("cs", 1)
 
 	secondSpan := proxy.Span{}
-	secondSpan.AddTiming("second", 0)
+	secondSpan.AddTiming("ss", 2)
 
 	mergeSpansInPlace(&firstSpan, secondSpan)
 
-	Expect(firstSpan.Timings).To(HaveLen(2))
+	Expect(firstSpan.Timings.CS).To(Equal(proxy.Timestamp(1)))
+	Expect(firstSpan.Timings.SS).To(Equal(proxy.Timestamp(2)))
 }
 
 func TestMergeSpansInPlace_BinaryAnnotations(t *testing.T) {
@@ -66,7 +67,7 @@ func TestMergeSpansInPlace_BinaryAnnotations_Reverse(t *testing.T) {
 	firstSpan.AddTag("tag", "a")
 
 	secondSpan := proxy.Span{}
-	secondSpan.AddTiming("sr", 0)
+	secondSpan.AddTiming("sr", 1)
 	secondSpan.AddTag("tag", "b")
 
 	mergeSpansInPlace(&firstSpan, secondSpan)

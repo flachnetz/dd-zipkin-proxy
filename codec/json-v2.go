@@ -61,13 +61,13 @@ func (span *spanV2) ToSpan() proxy.Span {
 	}
 
 	if span.Kind == "CLIENT" {
-		proxySpan.AddTiming(tagCS, proxySpan.Timestamp)
-		proxySpan.AddTiming(tagCR, proxySpan.Timestamp.Add(proxySpan.Duration))
+		proxySpan.Timings.CS = proxySpan.Timestamp
+		proxySpan.Timings.CR = proxySpan.Timestamp.Add(proxySpan.Duration)
 	}
 
 	if span.Kind == "SERVER" {
-		proxySpan.AddTiming(tagSR, proxySpan.Timestamp)
-		proxySpan.AddTiming(tagSS, proxySpan.Timestamp.Add(proxySpan.Duration))
+		proxySpan.Timings.SR = proxySpan.Timestamp
+		proxySpan.Timings.SS = proxySpan.Timestamp.Add(proxySpan.Duration)
 	}
 
 	return proxySpan

@@ -25,6 +25,10 @@ func (ts Timestamp) Add(duration time.Duration) Timestamp {
 	return Timestamp(int64(ts) + int64(duration))
 }
 
+func (ts Timestamp) IsValid() bool {
+	return ts > 0
+}
+
 func (ts *Timestamp) AddInPlace(duration time.Duration) {
 	*ts += Timestamp(duration)
 }

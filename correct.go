@@ -404,10 +404,10 @@ func correctTreeTimings(tree *tree, node *proxy.Span, offset time.Duration) {
 		node.Timestamp.AddInPlace(offset)
 	}
 
-	clientSent := node.Timings["cs"]
-	clientRecv := node.Timings["cr"]
-	serverSent := node.Timings["ss"]
-	serverRecv := node.Timings["sr"]
+	clientSent := node.Timings.CS
+	clientRecv := node.Timings.CR
+	serverSent := node.Timings.SS
+	serverRecv := node.Timings.SR
 
 	//        _________________________
 	//       |_cs________|_____________| cr
@@ -456,7 +456,7 @@ func correctTreeTimings(tree *tree, node *proxy.Span, offset time.Duration) {
 }
 
 func mergeSpansInPlace(spanToUpdate *proxy.Span, newSpan proxy.Span) {
-	_, newSpanIsServer := newSpan.Timings["sr"]
+	newSpanIsServer := newSpan.Timings.SR.IsValid() || newSpan.Timings.SS.IsValid()
 
 	if newSpanIsServer {
 		// prefer values from newSpan (server span)
@@ -473,9 +473,14 @@ func mergeSpansInPlace(spanToUpdate *proxy.Span, newSpan proxy.Span) {
 			spanToUpdate.AddTag(key, value)
 		}
 
-		for key, value := range newSpan.Timings {
-			spanToUpdate.AddTiming(key, value)
+		if newSpan.Timings.SR.IsValid() {
+			spanToUpdate.Timings.SR = newSpan.Timings.SR
 		}
+
+		if newSpan.Timings.SS.IsValid() {
+			spanToUpdate.Timings.SS = newSpan.Timings.SS
+		}
+
 	} else {
 		// merge tags, prefer the ones from the spanToUpdate (client)
 		if spanToUpdate.Service == "" {
@@ -488,7 +493,6 @@ func mergeSpansInPlace(spanToUpdate *proxy.Span, newSpan proxy.Span) {
 
 		// backup client values, so we can overwrite server values from newSpan later
 		clientTags := spanToUpdate.Tags
-		clientTimings := spanToUpdate.Timings
 
 		// merge tags
 		spanToUpdate.Tags = nil
@@ -500,14 +504,12 @@ func mergeSpansInPlace(spanToUpdate *proxy.Span, newSpan proxy.Span) {
 			spanToUpdate.AddTag(key, value)
 		}
 
-		// merge timings
-		spanToUpdate.Timings = nil
-		for key, value := range newSpan.Timings {
-			spanToUpdate.AddTiming(key, value)
+		if newSpan.Timings.CS.IsValid() {
+			spanToUpdate.Timings.CS = newSpan.Timings.CS
 		}
 
-		for key, value := range clientTimings {
-			spanToUpdate.AddTiming(key, value)
+		if newSpan.Timings.CR.IsValid() {
+			spanToUpdate.Timings.CR = newSpan.Timings.CR
 		}
 	}
 

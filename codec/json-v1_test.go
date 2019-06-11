@@ -31,8 +31,8 @@ func TestParseJsonV1(t *testing.T) {
 			tagProtocolVersion: tagJsonV1,
 		},
 
-		Timings: map[string]proxy.Timestamp{
-			"cs": proxy.Timestamp(1560276970 * time.Second),
+		Timings: proxy.Timings{
+			CS: proxy.Timestamp(1560276970 * time.Second),
 		},
 	}))
 }
