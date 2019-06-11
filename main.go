@@ -97,9 +97,7 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 	go forwardSpansToChannels(processedSpans, channels, spanConverter)
 
 	inputSpans := make(chan proxy.Span, 256)
-	go ErrorCorrectSpans(inputSpans, processedSpans, CorrectionOptions{
-		NoCorrectTreeTimings: false,
-	})
+	go ErrorCorrectSpans(inputSpans, processedSpans)
 
 	opts.HTTP.Serve(startup_http.Config{
 		Name: "dd-zipkin-proxy",
@@ -110,10 +108,8 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 		},
 
 		Routing: func(router *httprouter.Router) http.Handler {
-			// we emulate the zipkin api
-			router.POST("/api/v1/spans", handleSpans(inputSpans, 1))
-			router.POST("/api/v2/spans", handleSpans(inputSpans, 2))
-			return routing(router)
+			handleSpans(router, inputSpans)
+			return handleGzipRequestBody(routing(router))
 		},
 	})
 }

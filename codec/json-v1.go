@@ -47,7 +47,7 @@ func ParseJsonV1(input io.Reader) ([]proxy.Span, error) {
 		return nil, errors.WithMessage(err, "parse spans for json v1")
 	}
 
-	parsedSpans := make([]proxy.Span, len(decoded))
+	parsedSpans := make([]proxy.Span, 0, len(decoded))
 	for _, span := range decoded {
 		parsedSpans = append(parsedSpans, span.ToSpan())
 	}

@@ -12,47 +12,60 @@ import (
 	"strings"
 )
 
-func handleSpans(spans chan<- proxy.Span, version int) httprouter.Handle {
-	return func(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
-		var bodyReader io.Reader = req.Body
-
-		// decode body on the fly if it comes compressed
-		if req.Header.Get("Content-Encoding") == "gzip" {
-			var err error
-			bodyReader, err = gzip.NewReader(bodyReader)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-		}
-
-		// parse with correct mime type
+func handleSpans(r *httprouter.Router, spans chan<- proxy.Span) {
+	r.POST("/api/v1/spans", func(writer http.ResponseWriter, req *http.Request, params httprouter.Params) {
 		var err error
 		if strings.Contains(req.Header.Get("Content-Type"), "application/json") {
-			metrics.GetOrRegisterTimer("spans.receive[type:json]", nil).Time(func() {
-				err = parseSpansWithJSON(spans, bodyReader, version)
+			metrics.GetOrRegisterTimer("spans.receive[type:json-v1]", nil).Time(func() {
+				err = parseSpansWithJSON(spans, req.Body, codec.ParseJsonV1)
 			})
 		} else {
 			metrics.GetOrRegisterTimer("spans.receive[type:thrift]", nil).Time(func() {
-				err = parseSpansWithThrift(spans, bodyReader, version)
+				err = parseSpansWithThrift(spans, req.Body)
 			})
 		}
 
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			log.WithField("prefix", "parser").Warnf("Request failed with error: %s", err)
-
+			http.Error(writer, err.Error(), http.StatusBadRequest)
 		} else {
-			w.WriteHeader(http.StatusAccepted)
+			writer.WriteHeader(http.StatusAccepted)
 		}
+	})
+
+	r.POST("/api/v2/spans", func(writer http.ResponseWriter, req *http.Request, params httprouter.Params) {
+		var err error
+		metrics.GetOrRegisterTimer("spans.receive[type:json-v2]", nil).Time(func() {
+			err = parseSpansWithJSON(spans, req.Body, codec.ParseJsonV2)
+		})
+
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+		} else {
+			writer.WriteHeader(http.StatusAccepted)
+		}
+	})
+}
+
+func handleGzipRequestBody(handle http.Handler) http.HandlerFunc {
+	return func(writer http.ResponseWriter, req *http.Request) {
+		// decode body on the fly if it comes compressed
+		if req.Header.Get("Content-Encoding") == "gzip" {
+			body, err := gzip.NewReader(req.Body)
+			if err != nil {
+				http.Error(writer, err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			req.Body = body
+			req.Header.Del("Content-Encoding")
+			req.Header.Del("Content-Length")
+		}
+
+		handle.ServeHTTP(writer, req)
 	}
 }
 
-func parseSpansWithThrift(spansChannel chan<- proxy.Span, body io.Reader, version int) error {
-	if version != 1 {
-		return errors.New("can only parse thrift v1")
-	}
-
+func parseSpansWithThrift(spansChannel chan<- proxy.Span, body io.Reader) error {
 	parsedSpans, err := codec.ParseThriftV1(body)
 	if err != nil {
 		return errors.WithMessage(err, "parse body as thrift")
@@ -68,21 +81,8 @@ func parseSpansWithThrift(spansChannel chan<- proxy.Span, body io.Reader, versio
 	return nil
 }
 
-func parseSpansWithJSON(spansChannel chan<- proxy.Span, body io.Reader, version int) error {
-	var parsedSpans []proxy.Span
-
-	var err error
-	switch version {
-	case 1:
-		parsedSpans, err = codec.ParseJsonV1(body)
-
-	case 2:
-		parsedSpans, err = codec.ParseJsonV2(body)
-
-	default:
-		return errors.New("invalid version code")
-	}
-
+func parseSpansWithJSON(spansChannel chan<- proxy.Span, body io.Reader, parser func(io.Reader) ([]proxy.Span, error)) error {
+	parsedSpans, err := parser(body)
 	if err != nil {
 		return errors.WithMessage(err, "parsing spans from json")
 	}

@@ -30,7 +30,7 @@ func ParseThriftV1(body io.Reader) ([]proxy.Span, error) {
 			return nil, errors.WithMessage(err, "read thrift v1 encoded span")
 		}
 
-		spans = append(spans, convertThriftSpan(span))
+		spans[idx] = convertThriftSpan(span)
 	}
 
 	return spans, errors.WithMessage(protocol.ReadListEnd(), "Could not read end of list")

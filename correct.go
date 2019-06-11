@@ -149,11 +149,7 @@ func (tree *tree) Roots() []*proxy.Span {
 	return candidates
 }
 
-type CorrectionOptions struct {
-	NoCorrectTreeTimings bool
-}
-
-func ErrorCorrectSpans(inputCh <-chan proxy.Span, outputCh chan<- proxy.Span, opts CorrectionOptions) {
+func ErrorCorrectSpans(inputCh <-chan proxy.Span, outputCh chan<- proxy.Span) {
 	traces := make(map[Id]*tree)
 
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -185,12 +181,12 @@ func ErrorCorrectSpans(inputCh <-chan proxy.Span, outputCh chan<- proxy.Span, op
 			trace.AddSpan(span)
 
 		case <-ticker.C:
-			finishTraces(traces, blacklistedTraces, outputCh, opts)
+			finishTraces(traces, blacklistedTraces, outputCh)
 		}
 	}
 }
 
-func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- proxy.Span, opts CorrectionOptions) {
+func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- proxy.Span) {
 	var spanCount int64
 
 	deadlineUpdate := time.Now().Add(-bufferTime)
@@ -248,9 +244,7 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- pr
 			continue
 		}
 
-		if !opts.NoCorrectTreeTimings {
-			correctTreeTimings(trace, roots[0], 0)
-		}
+		correctTreeTimings(trace, roots[0], 0)
 
 		metricsTracesCorrected.Mark(1)
 
