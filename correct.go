@@ -166,6 +166,11 @@ func ErrorCorrectSpans(inputCh <-chan proxy.Span, outputCh chan<- proxy.Span) {
 				return
 			}
 
+			// ignore invalid spans
+			if span.Trace == 0 || span.Id == 0 {
+				continue
+			}
+
 			// check if trace is in black list
 			if _, ok := blacklistedTraces[span.Trace]; ok {
 				metricsReceivedBlacklistedSpan.Mark(1)
