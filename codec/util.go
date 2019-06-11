@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/flachnetz/dd-zipkin-proxy/cache"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
+	"github.com/json-iterator/go"
 )
 
 type Id = proxy.Id
@@ -33,3 +34,11 @@ var tagCS = "cs"
 var tagCR = "cr"
 var tagSR = "sr"
 var tagSS = "ss"
+
+var jsonConfig = jsoniter.Config{
+	CaseSensitive:   false,
+	OnlyTaggedField: true,
+	TagKey:          "json",
+
+	ObjectFieldMustBeSimpleString: true,
+}.Froze()

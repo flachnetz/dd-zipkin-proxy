@@ -11,7 +11,10 @@ require (
 	github.com/flachnetz/startup/startup_metrics v1.0.0
 	github.com/go-logfmt/logfmt v0.4.0 // indirect
 	github.com/gogo/protobuf v1.2.1 // indirect
+	github.com/json-iterator/go v1.1.6
 	github.com/julienschmidt/httprouter v1.2.0
+	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
+	github.com/modern-go/reflect2 v1.0.1 // indirect
 	github.com/onsi/gomega v1.5.0
 	github.com/opentracing-contrib/go-observer v0.0.0-20170622124052-a52f23424492 // indirect
 	github.com/openzipkin-contrib/zipkin-go-opentracing v0.3.5

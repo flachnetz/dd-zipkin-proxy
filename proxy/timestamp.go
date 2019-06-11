@@ -32,3 +32,13 @@ func (ts *Timestamp) AddInPlace(duration time.Duration) {
 func (ts Timestamp) MarshalJSON() ([]byte, error) {
 	return ts.ToTime().MarshalJSON()
 }
+
+func (ts *Timestamp) UnmarshalJSON(encoded []byte) error {
+	var timestamp time.Time
+	if err := timestamp.UnmarshalJSON(encoded); err != nil {
+		return err
+	}
+
+	*ts = Timestamp(timestamp.UnixNano())
+	return nil
+}

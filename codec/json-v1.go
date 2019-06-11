@@ -1,7 +1,6 @@
 package codec
 
 import (
-	"encoding/json"
 	"github.com/flachnetz/dd-zipkin-proxy/cache"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"github.com/pkg/errors"
@@ -44,7 +43,7 @@ type endpoint struct {
 
 func ParseJsonV1(input io.Reader) ([]proxy.Span, error) {
 	var decoded []spanV1
-	if err := json.NewDecoder(input).Decode(&decoded); err != nil {
+	if err := jsonConfig.NewDecoder(input).Decode(&decoded); err != nil {
 		return nil, errors.WithMessage(err, "parse spans for json v1")
 	}
 
