@@ -15,7 +15,9 @@ import (
 	"github.com/rcrowley/go-metrics"
 	"github.com/sirupsen/logrus"
 	"net/http"
+	"runtime"
 	"strconv"
+	"sync"
 
 	_ "github.com/apache/thrift/lib/go/thrift"
 )
@@ -115,14 +117,34 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 }
 
 func forwardSpansToChannels(source <-chan proxy.Span, targets []chan<- proxy.Span, converter SpanConverter) {
-	for span := range source {
+	processSpan := func(span proxy.Span) {
 		converted, err := converter(span)
-		if err != nil {
-			continue
+		if err != nil || converted.Id == 0 || converted.Trace == 0 {
+			return
 		}
 
 		for _, target := range targets {
 			target <- converted
 		}
 	}
+
+	// limit concurrency by number of cpus
+	concurrency := runtime.NumCPU() - 2
+	if concurrency < 2 {
+		concurrency = 2
+	}
+
+	// start processSpan routines
+	var wg sync.WaitGroup
+	for idx := 0; idx < concurrency; idx++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for span := range source {
+				processSpan(span)
+			}
+		}()
+	}
+
+	wg.Wait()
 }
