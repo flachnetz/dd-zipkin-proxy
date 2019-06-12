@@ -1,9 +1,12 @@
 github.com/DataDog/dd-trace-go v0.6.1 h1:nsZ2lohbSw1CKtfNRu3wPh1jFirv6XSz8vqNpuIYWbM=
 github.com/DataDog/dd-trace-go v0.6.1/go.mod h1:SmQTTcC37XMyEm75HV0AWiZIYxDiaNhRi49zorIpW+o=
+github.com/DataDog/zstd v1.3.5/go.mod h1:1jcaCB/ufaK+sKp1NBhlGmpz41jOoPQ35bpF36t7BBo=
 github.com/DataDog/zstd v1.3.6-0.20190409195224-796139022798 h1:2T/jmrHeTezcCM58lvEQXs0UpQJCo5SoGAcg+mbSTIg=
 github.com/DataDog/zstd v1.3.6-0.20190409195224-796139022798/go.mod h1:1jcaCB/ufaK+sKp1NBhlGmpz41jOoPQ35bpF36t7BBo=
+github.com/Shopify/sarama v1.21.0/go.mod h1:yuqtN/pe8cXRWG5zPaO7hCfNJp5MwmkoJEoLjkm5tCQ=
 github.com/Shopify/sarama v1.22.1 h1:exyEsKLGyCsDiqpV5Lr4slFi8ev2KiM3cP1KZ6vnCQ0=
 github.com/Shopify/sarama v1.22.1/go.mod h1:FRzlvRpMFO/639zY1SDxUxkqH97Y0ndM5CbGj6oG3As=
+github.com/Shopify/toxiproxy v2.1.4+incompatible h1:TKdv8HiTLgE5wdJuEML90aBgNWsokNbMijUGhmcoBJc=
 github.com/Shopify/toxiproxy v2.1.4+incompatible/go.mod h1:OXgGpZ6Cli1/URJOF1DMxUHB2q5Ap20/P/eIdh4G0pI=
 github.com/apache/thrift v0.12.0 h1:pODnxUFNcjP9UTLZGTdeh+j16A8lJbRvD3rOtrk/7bs=
 github.com/apache/thrift v0.12.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
@@ -22,10 +25,18 @@ github.com/flachnetz/go-admin v1.5.3 h1:9X9yjkUaEl9N6UR/7D91IxfIMp1nWrhrSuCTCdP+
 github.com/flachnetz/go-admin v1.5.3/go.mod h1:NLn/OCLKN1xay9FvSZu36UWlaHSIB83mUu/RdI3eApY=
 github.com/flachnetz/startup v1.6.3 h1:jYV2DfDLtA9f+RFynWuE75XkPeM3x6ddUnn5a78EKbs=
 github.com/flachnetz/startup v1.6.3/go.mod h1:s4Slm19+63fIIRoSmzVw1AaT1yBo82ulQHzaRMJo/xY=
+github.com/flachnetz/startup/lib/kafka v1.0.0 h1:6Q4lZiIhCDylAcbciaCuuz+lrxNFYMs8Ti/E5ORDHFg=
+github.com/flachnetz/startup/lib/kafka v1.0.0/go.mod h1:vkmicUk+/1Jpx6/X3tMxwzCloxRPAPszlYy/JSGLu+k=
+github.com/flachnetz/startup/lib/kafka v1.0.2 h1:7fEg7/2w+ndaCqlYr+SL97hk/gxLbSQEb65sSlH69OI=
+github.com/flachnetz/startup/lib/kafka v1.0.2/go.mod h1:vkmicUk+/1Jpx6/X3tMxwzCloxRPAPszlYy/JSGLu+k=
+github.com/flachnetz/startup/lib/schema v1.0.0 h1:7PQslGMDUD9R1iytudHXJL7nAWTwTiOtmlcda3XR2O8=
+github.com/flachnetz/startup/lib/schema v1.0.0/go.mod h1:NG5538r/5p+P2jKSDWmyxD84R3jII3cwGGcQmYP66Vc=
 github.com/flachnetz/startup/startup_base v1.0.0 h1:rRo57w8DY2NZG3u3Vkc152hI9npD1ogZ8FlwESmyObM=
 github.com/flachnetz/startup/startup_base v1.0.0/go.mod h1:konmOUtT1WORNuAcKinsHc9/9z40OLqIyYmnqmaRi+4=
 github.com/flachnetz/startup/startup_http v1.0.1 h1:/cReOs2a7cONs9x3NLe+bMGsp+/YkOFWWBV/TPvzko4=
 github.com/flachnetz/startup/startup_http v1.0.1/go.mod h1:dCni4Aknl2lkHkYeXXG2B6qE+zix8Jnnirfn9VN9Nu8=
+github.com/flachnetz/startup/startup_kafka v1.0.1 h1:UQX5hqkTCf6goUDdaCYNj2k6a79DovZaQSwpdGcogdI=
+github.com/flachnetz/startup/startup_kafka v1.0.1/go.mod h1:u9Dx9iSaER/hIOrzUDgp0PHtnYFeo4xIy2kmn8DZ4q0=
 github.com/flachnetz/startup/startup_logrus v1.0.5 h1:vqz2OQ9ckTs25htzkNYO8gos9v3vvI/QDTJmG6Psnos=
 github.com/flachnetz/startup/startup_logrus v1.0.5/go.mod h1:GExesCB2Tx/UVudDe0MkNfJ10wtz24Epb+MOKxPMEXU=
 github.com/flachnetz/startup/startup_metrics v1.0.0 h1:oMnZ7TjmWtCcu0Y+BgTYafZs0zr0C9GhINCgG8Mt2V0=
@@ -47,6 +58,7 @@ github.com/goji/httpauth v0.0.0-20160601135302-2da839ab0f4d/go.mod h1:nnjvkQ9ptG
 github.com/golang/protobuf v1.2.0/go.mod h1:6lQm79b+lXiMfvg/cZm0SGofjICqVBUtrP5yJMmIC1U=
 github.com/golang/protobuf v1.3.1 h1:YF8+flBXS5eO826T4nzqPrxfhQThhXl0YzfuUPu4SBg=
 github.com/golang/protobuf v1.3.1/go.mod h1:6lQm79b+lXiMfvg/cZm0SGofjICqVBUtrP5yJMmIC1U=
+github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db/go.mod h1:/XxbfmMg8lxefKM7IXC3fBNl/7bRcc72aCRzEWrmP2Q=
 github.com/golang/snappy v0.0.1 h1:Qgr9rKW7uDUkrbSmQeiDsGa8SjGyCOGtuasMWwvp2P4=
 github.com/golang/snappy v0.0.1/go.mod h1:/XxbfmMg8lxefKM7IXC3fBNl/7bRcc72aCRzEWrmP2Q=
 github.com/gorilla/handlers v1.4.0 h1:XulKRWSQK5uChr4pEgSE4Tc/OcmnU9GJuSwdog/tZsA=
@@ -66,6 +78,7 @@ github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+o
 github.com/konsorten/go-windows-terminal-sequences v1.0.1/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
 github.com/konsorten/go-windows-terminal-sequences v1.0.2 h1:DB17ag19krx9CFsz4o3enTrPXyIXCl+2iCXH/aMAp9s=
 github.com/konsorten/go-windows-terminal-sequences v1.0.2/go.mod h1:T0+1ngSBFLxvqU3pZ+m/2kptfBszLMUkC4ZK/EgS/cQ=
+github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515 h1:T+h1c/A9Gawja4Y9mFVWj2vyii2bbUNDw3kt9VxK2EY=
 github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515/go.mod h1:+0opPa2QZZtGFBFZlji/RkVcI2GknAs/DXo4wKdlNEc=
 github.com/kr/pretty v0.1.0 h1:L/CwN0zerZDmRFUapSPitk6f+Q3+0za1rQkzVuMiMFI=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=
@@ -99,6 +112,8 @@ github.com/openzipkin-contrib/zipkin-go-opentracing v0.3.5 h1:82Tnq9OJpn+h5xgGps
 github.com/openzipkin-contrib/zipkin-go-opentracing v0.3.5/go.mod h1:uVHyebswE1cCXr2A73cRM2frx5ld1RJUCJkFNZ90ZiI=
 github.com/pierrec/lz4 v0.0.0-20190327172049-315a67e90e41 h1:GeinFsrjWz97fAxVUEd748aV0cYL+I6k44gFJTCVvpU=
 github.com/pierrec/lz4 v0.0.0-20190327172049-315a67e90e41/go.mod h1:3/3N9NVKO0jef7pBehbT1qWhCMrIgbYNnFAZCqQ5LRc=
+github.com/pierrec/lz4 v2.0.5+incompatible h1:2xWsjqPFWcplujydGg4WmhC/6fZqK42wMM8aXeqhl0I=
+github.com/pierrec/lz4 v2.0.5+incompatible/go.mod h1:pdkljMzZIN41W+lC3N2tnIh5sFi+IEE17M5jbnwPHcY=
 github.com/pkg/errors v0.8.1 h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pkg/profile v1.2.1/go.mod h1:hJw3o1OdXxsrSjjVksARp5W95eeEaEfptyVZyv6JUPA=

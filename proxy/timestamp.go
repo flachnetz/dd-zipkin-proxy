@@ -17,8 +17,12 @@ func (ts Timestamp) ToMicros() int64 {
 	return int64(ts) / int64(time.Microsecond)
 }
 
+func (ts Timestamp) ToNanos() int64 {
+	return int64(ts)
+}
+
 func (ts Timestamp) ToTime() time.Time {
-	return time.Unix(0, int64(ts))
+	return time.Unix(0, ts.ToNanos())
 }
 
 func (ts Timestamp) Add(duration time.Duration) Timestamp {
@@ -46,3 +50,4 @@ func (ts *Timestamp) UnmarshalJSON(encoded []byte) error {
 	*ts = Timestamp(timestamp.UnixNano())
 	return nil
 }
+

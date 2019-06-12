@@ -1,14 +1,18 @@
 package zipkinproxy
 
 import (
+	"github.com/Shopify/sarama"
+	"github.com/flachnetz/dd-zipkin-proxy/balance"
 	"github.com/flachnetz/dd-zipkin-proxy/cache"
 	"github.com/flachnetz/dd-zipkin-proxy/datadog"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"github.com/flachnetz/dd-zipkin-proxy/zipkin"
 	"github.com/flachnetz/go-admin"
 	"github.com/flachnetz/startup"
-	"github.com/flachnetz/startup/startup_base"
+	"github.com/flachnetz/startup/lib/kafka"
+	. "github.com/flachnetz/startup/startup_base"
 	"github.com/flachnetz/startup/startup_http"
+	"github.com/flachnetz/startup/startup_kafka"
 	"github.com/flachnetz/startup/startup_metrics"
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/profile"
@@ -18,6 +22,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"time"
 
 	_ "github.com/apache/thrift/lib/go/thrift"
 )
@@ -37,9 +42,17 @@ func Main(spanConverter SpanConverter) {
 
 func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 	var opts struct {
-		Base    startup_base.BaseOptions       `group:"Base options"`
+		Base    BaseOptions                    `group:"Base options"`
 		HTTP    startup_http.HTTPOptions       `group:"HTTP server options"`
 		Metrics startup_metrics.MetricsOptions `group:"Metrics configuration"`
+
+		Kafka struct {
+			startup_kafka.KafkaOptions
+
+			Topic string `long:"kafka-topic" default:"zipkin-spans" description:"Kafka topic to put spans to. Will be created if it does not exist"`
+
+			Partitions []int32 `long:"kafka-partitions" description:"Partitions to consume spans from (index is one based)"`
+		} `group:"Load balancing configuration"`
 
 		ProfileCPU bool `long:"profile" description:"Enable CPU profiling"`
 
@@ -50,6 +63,15 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 	}
 
 	opts.Metrics.Inputs.MetricsPrefix = "zipkin.proxy"
+	opts.Kafka.Inputs.KafkaConfig = sarama.NewConfig()
+	opts.Kafka.Inputs.KafkaConfig.Version = sarama.V1_1_1_0
+	opts.Kafka.Inputs.KafkaConfig.Consumer.Fetch.Min = 128 * 1024
+	opts.Kafka.Inputs.KafkaConfig.Consumer.Fetch.Max = 1024 * 1024
+	opts.Kafka.Inputs.KafkaConfig.Consumer.MaxWaitTime = 1 * time.Second
+	opts.Kafka.Inputs.KafkaConfig.Producer.RequiredAcks = sarama.NoResponse
+	opts.Kafka.Inputs.KafkaConfig.Producer.Flush.Frequency = 1 * time.Second
+	opts.Kafka.Inputs.KafkaConfig.Producer.MaxMessageBytes = 768 * 1024
+	opts.Kafka.Inputs.KafkaConfig.ChannelBufferSize = 64
 
 	startup.MustParseCommandLine(&opts)
 
@@ -98,8 +120,60 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 	processedSpans := make(chan proxy.Span, 64)
 	go forwardSpansToChannels(processedSpans, channels, spanConverter)
 
-	inputSpans := make(chan proxy.Span, 256)
-	go ErrorCorrectSpans(inputSpans, processedSpans)
+	// http handler will put spans into this channel
+	httpInputSpans := make(chan proxy.Span, 256)
+
+	if len(opts.Kafka.Addresses) > 0 {
+		log.Infof(
+			"Kafka load balancing activated, processing spans from topic %s on partitions %v",
+			opts.Kafka.Topic, opts.Kafka.Partitions)
+
+		client := opts.Kafka.KafkaClient()
+
+		// ensure that the topic exists
+		topic := kafka.Topic{
+			Name: opts.Kafka.Topic, NumPartitions: 10, ReplicationFactor: 1,
+			Config: map[string]*string{
+				"retention.ms":    toStringPtr(strconv.Itoa(int(10 * time.Minute / time.Millisecond))),
+				"retention.bytes": toStringPtr(strconv.Itoa(64 * 1024 * 1024)),
+				"segment.bytes":   toStringPtr(strconv.Itoa(4 * 1024 * 1024)),
+			}}
+		err := kafka.EnsureTopics(client, kafka.Topics{topic})
+		FatalOnError(err, "Ensure that the topic exists failed")
+
+		kafkaSender, err := balance.NewSender(client, opts.Kafka.Topic)
+		FatalOnError(err, "Create kafka sender for spans failed")
+
+		// send spans to kafka
+		go kafkaSender.Send(httpInputSpans)
+
+		consumer, err := sarama.NewConsumerFromClient(client)
+		FatalOnError(err, "Create kafka consumer for spans failed")
+
+		kafkaInputSpans := make(chan proxy.Span, 256)
+		for _, partition := range opts.Kafka.Partitions {
+			log.Debugf("Subscribing to topic %s:%d", opts.Kafka.Topic, partition)
+			c, err := balance.Consume(consumer, opts.Kafka.Topic, partition, func(span proxy.Span) {
+				kafkaInputSpans <- span
+			})
+
+			FatalOnError(err, "Create kafka consumer for partition %d failed", partition)
+
+			//noinspection ALL
+			defer Close(c, "Closing partition consumer failed")
+		}
+
+		// send spans received from kafka to processing
+		go ErrorCorrectSpans(kafkaInputSpans, processedSpans)
+
+	} else {
+		log.Infof("No kafka load balancing activated, processing spans from http handler only")
+
+		// directly process all input spans
+		go ErrorCorrectSpans(httpInputSpans, processedSpans)
+	}
+
+	log.Info("Setup completed, starting http listener now")
 
 	opts.HTTP.Serve(startup_http.Config{
 		Name: "dd-zipkin-proxy",
@@ -110,10 +184,14 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 		},
 
 		Routing: func(router *httprouter.Router) http.Handler {
-			handleSpans(router, inputSpans)
+			handleSpans(router, httpInputSpans)
 			return handleGzipRequestBody(routing(router))
 		},
 	})
+}
+
+func toStringPtr(stringValue string) *string {
+	return &stringValue
 }
 
 func forwardSpansToChannels(source <-chan proxy.Span, targets []chan<- proxy.Span, converter SpanConverter) {
