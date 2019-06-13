@@ -23,8 +23,11 @@ func TestParseJsonV1(t *testing.T) {
 		Name:    "span name",
 		Service: "my-service",
 
+		// timestamp is also picked from the CS/CR if available
 		Timestamp: proxy.Timestamp(1560276970 * time.Second),
-		Duration:  50 * time.Millisecond,
+
+		// duration is taken from the CS/CR if available
+		Duration: 1000 * time.Millisecond,
 
 		Tags: map[string]string{
 			"http.path":        "/my/path",
@@ -33,6 +36,9 @@ func TestParseJsonV1(t *testing.T) {
 
 		Timings: proxy.Timings{
 			CS: proxy.Timestamp(1560276970 * time.Second),
+			CR: proxy.Timestamp(1560276971 * time.Second),
+			SR: proxy.Timestamp(1560276972 * time.Second),
+			SS: proxy.Timestamp(1560276973 * time.Second),
 		},
 	}))
 }
@@ -45,17 +51,31 @@ const encodedJsonV1 = `[
 
 			"name": "span name",
 
-			"timestamp": 1560276970000000,
+			"timestamp": 1560276900000000,
 			"duration": 50000,
 
 			"annotations": [
 				{
 					"timestamp": 1560276970000000,
 					"value": "cs",
-					"endpoint": {
-						"serviceName": "my-service"
-					}
+					"endpoint": {"serviceName": "my-service"}
+				},
+				{
+					"timestamp": 1560276971000000,
+					"value": "cr",
+					"endpoint": {"serviceName": "my-service"}
+				},
+				{
+					"timestamp": 1560276972000000,
+					"value": "sr",
+					"endpoint": {"serviceName": "my-service"}
+				},
+				{
+					"timestamp": 1560276973000000,
+					"value": "ss",
+					"endpoint": {"serviceName": "my-service"}
 				}
+
 			],
 
 			"binaryAnnotations": [

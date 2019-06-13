@@ -5,6 +5,7 @@ import (
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"github.com/pkg/errors"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -60,12 +61,12 @@ func (span *spanV2) ToSpan() proxy.Span {
 		proxySpan.Duration = 1 * time.Millisecond
 	}
 
-	if span.Kind == "CLIENT" {
+	if strings.EqualFold(span.Kind, "client") {
 		proxySpan.Timings.CS = proxySpan.Timestamp
 		proxySpan.Timings.CR = proxySpan.Timestamp.Add(proxySpan.Duration)
 	}
 
-	if span.Kind == "SERVER" {
+	if strings.EqualFold(span.Kind, "server") {
 		proxySpan.Timings.SR = proxySpan.Timestamp
 		proxySpan.Timings.SS = proxySpan.Timestamp.Add(proxySpan.Duration)
 	}
