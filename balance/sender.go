@@ -43,13 +43,15 @@ func (s *Sender) sendSpan(span proxy.Span) {
 
 		CrInNanos: span.Timings.CR.ToNanos(),
 		CsInNanos: span.Timings.CS.ToNanos(),
-		SrInNanos: span.Timings.CR.ToNanos(),
+		SrInNanos: span.Timings.SR.ToNanos(),
 		SsInNanos: span.Timings.SS.ToNanos(),
 
 		Tags: span.Tags,
 	}
+
 	var buf bytes.Buffer
 	_ = avroSpan.Serialize(&buf)
+
 	s.producer.Input() <- &sarama.ProducerMessage{
 		Key:   keyOf(span.Trace),
 		Value: sarama.ByteEncoder(buf.Bytes()),
