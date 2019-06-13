@@ -50,4 +50,3 @@ func (ts *Timestamp) UnmarshalJSON(encoded []byte) error {
 	*ts = Timestamp(timestamp.UnixNano())
 	return nil
 }
-

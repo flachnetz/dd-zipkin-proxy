@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -49,9 +50,8 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 		Kafka struct {
 			startup_kafka.KafkaOptions
 
-			Topic string `long:"kafka-topic" default:"zipkin-spans" description:"Kafka topic to put spans to. Will be created if it does not exist"`
-
-			Partitions []int32 `long:"kafka-partitions" description:"Partitions to consume spans from (index is one based)"`
+			Topic           string `long:"kafka-topic" default:"zipkin-spans" description:"Kafka topic to put spans to. Will be created if it does not exist"`
+			ConsumerGroupId string `long:"kafka-consumer-group" default:"zipkin-proxy" description:"Name of the consumer group to use to load balance zipkin spans."`
 		} `group:"Load balancing configuration"`
 
 		ProfileCPU bool `long:"profile" description:"Enable CPU profiling"`
@@ -125,12 +125,13 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 
 	if len(opts.Kafka.Addresses) > 0 {
 		log.Infof(
-			"Kafka load balancing activated, processing spans from topic %s on partitions %v",
-			opts.Kafka.Topic, opts.Kafka.Partitions)
+			"Kafka load balancing activated, processing spans from topic %s in consumer group %s",
+			opts.Kafka.Topic, opts.Kafka.ConsumerGroupId)
 
+		log.Debugf("Connect to kafka brokers at %s", strings.Join(opts.Kafka.Addresses, ", "))
 		client := opts.Kafka.KafkaClient()
 
-		// ensure that the topic exists
+		log.Debugf("Ensure that topic %s exists", opts.Kafka.Topic)
 		topic := kafka.Topic{
 			Name: opts.Kafka.Topic, NumPartitions: 10, ReplicationFactor: 1,
 			Config: map[string]*string{
@@ -141,27 +142,25 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 		err := kafka.EnsureTopics(client, kafka.Topics{topic})
 		FatalOnError(err, "Ensure that the topic exists failed")
 
+		log.Debugf("Create kafka span sender")
 		kafkaSender, err := balance.NewSender(client, opts.Kafka.Topic)
 		FatalOnError(err, "Create kafka sender for spans failed")
 
 		// send spans to kafka
 		go kafkaSender.Send(httpInputSpans)
 
-		consumer, err := sarama.NewConsumerFromClient(client)
-		FatalOnError(err, "Create kafka consumer for spans failed")
-
 		kafkaInputSpans := make(chan proxy.Span, 256)
-		for _, partition := range opts.Kafka.Partitions {
-			log.Debugf("Subscribing to topic %s:%d", opts.Kafka.Topic, partition)
-			c, err := balance.Consume(consumer, opts.Kafka.Topic, partition, func(span proxy.Span) {
-				kafkaInputSpans <- span
-			})
 
-			FatalOnError(err, "Create kafka consumer for partition %d failed", partition)
+		log.Debugf("Create consumer group with name %s", opts.Kafka.ConsumerGroupId)
+		consumerGroup, err := sarama.NewConsumerGroupFromClient(opts.Kafka.ConsumerGroupId, client)
+		FatalOnError(err, "Cannot create consumer for group %s", opts.Kafka.ConsumerGroupId)
 
-			//noinspection ALL
-			defer Close(c, "Closing partition consumer failed")
-		}
+		log.Debugf("Start consuming topic %s", opts.Kafka.Topic)
+		callback := func(span proxy.Span) { kafkaInputSpans <- span }
+		closeConsumerGroup := balance.Consume(consumerGroup, opts.Kafka.Topic, callback)
+
+		//noinspection ALL
+		defer closeConsumerGroup()
 
 		// send spans received from kafka to processing
 		go ErrorCorrectSpans(kafkaInputSpans, processedSpans)
