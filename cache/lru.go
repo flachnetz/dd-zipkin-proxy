@@ -110,16 +110,3 @@ func (c *lruCache) Count() int {
 
 	return result
 }
-
-func (c *lruCache) Snapshot() []string {
-	c.lock.Lock()
-
-	var result []string
-	for i := c.usage.Front(); i != nil; i = i.Next() {
-		result = append(result, i.Value.(string))
-	}
-
-	c.lock.Unlock()
-
-	return result
-}
