@@ -61,7 +61,7 @@ func convertThriftSpan(span zipkincore.Span) proxy.Span {
 	}
 
 	for _, annotation := range span.BinaryAnnotations {
-		proxySpan.AddTag(annotation.Key, toStringCached(annotation.Value))
+		proxySpan.AddTag(annotation.Key, cache.StringForByteSliceNoCopy(annotation.Value))
 
 		if annotation.Host != nil && proxySpan.Service == "" {
 			proxySpan.Service = annotation.Host.ServiceName

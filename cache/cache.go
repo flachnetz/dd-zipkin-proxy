@@ -112,7 +112,8 @@ func byteSlice(copyOnInsert bool, value []byte) []byte {
 	}
 
 	if copyOnInsert {
-		value = append([]byte(nil), value...)
+		newValue := make([]byte, 0, len(value))
+		value = append(newValue, value...)
 	}
 
 	atomic.AddUint64(&metricMissCount, 1)
