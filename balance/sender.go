@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"github.com/Shopify/sarama"
-	"github.com/flachnetz/dd-zipkin-proxy/balance/avro"
+	"github.com/flachnetz/dd-zipkin-proxy/codec"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"github.com/pkg/errors"
 )
@@ -30,27 +30,8 @@ func (s *Sender) Send(spans <-chan proxy.Span) {
 }
 
 func (s *Sender) sendSpan(span proxy.Span) {
-	avroSpan := avro.Span{
-		Id:     int64(span.Id),
-		Trace:  int64(span.Trace),
-		Parent: int64(span.Parent),
-
-		Name:    span.Name,
-		Service: span.Service,
-
-		TimestampInNanos: span.Timestamp.ToNanos(),
-		DurationInNanos:  span.Duration.Nanoseconds(),
-
-		CrInNanos: span.Timings.CR.ToNanos(),
-		CsInNanos: span.Timings.CS.ToNanos(),
-		SrInNanos: span.Timings.SR.ToNanos(),
-		SsInNanos: span.Timings.SS.ToNanos(),
-
-		Tags: span.Tags,
-	}
-
 	var buf bytes.Buffer
-	_ = avroSpan.Serialize(&buf)
+	_ = codec.BinaryEncode(span, &buf)
 
 	s.producer.Input() <- &sarama.ProducerMessage{
 		Key:   keyOf(span.Trace),

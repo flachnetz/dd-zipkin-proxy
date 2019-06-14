@@ -1,7 +1,6 @@
 package codec
 
 import (
-	"github.com/flachnetz/dd-zipkin-proxy/cache"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"github.com/pkg/errors"
 	"io"
@@ -9,83 +8,84 @@ import (
 )
 
 type spanV1 struct {
-	TraceID  Id  `json:"traceId"`
-	ID       Id  `json:"id"`
-	ParentID *Id `json:"parentId"`
+	TraceID  Id `json:"traceId"`
+	ID       Id `json:"id"`
+	ParentID Id `json:"parentId"`
 
-	Annotations       []annotationV1       `json:"annotations"`
+	Annotations       [4]annotationV1      `json:"annotations"`
 	BinaryAnnotations []binaryAnnotationV1 `json:"binaryAnnotations"`
 
 	Name string `json:"name"`
 
-	Timestamp *int64 `json:"timestamp"`
-	Duration  *int64 `json:"duration"`
+	Timestamp int64 `json:"timestamp"`
+	Duration  int64 `json:"duration"`
 }
 
 type annotationV1 struct {
-	Timestamp int64     `json:"timestamp"`
-	Value     string    `json:"value"`
-	Endpoint  *endpoint `json:"endpoint"`
+	Timestamp int64    `json:"timestamp"`
+	Value     string   `json:"value"`
+	Endpoint  endpoint `json:"endpoint"`
 }
 
 type binaryAnnotationV1 struct {
-	Key      string      `json:"key"`
-	Value    interface{} `json:"value"`
-	Endpoint *endpoint   `json:"endpoint"`
+	Key      string   `json:"key"`
+	Value    string   `json:"value"`
+	Endpoint endpoint `json:"endpoint"`
 }
 
 type endpoint struct {
 	ServiceName string `json:"serviceName"`
-	// Ipv4        net.IP `json:"ipv4,omitempty"`
-	// Ipv6        net.IP `json:"ipv6,omitempty"`
-	// Port        uint16 `json:"port"`
 }
 
 func ParseJsonV1(input io.Reader) ([]proxy.Span, error) {
 	var decoded []spanV1
+
 	if err := jsonConfig.NewDecoder(input).Decode(&decoded); err != nil {
 		return nil, errors.WithMessage(err, "parse spans for json v1")
 	}
 
-	parsedSpans := make([]proxy.Span, 0, len(decoded))
-	for _, span := range decoded {
-		parsedSpans = append(parsedSpans, span.ToSpan())
+	parsedSpans := make([]proxy.Span, len(decoded))
+	for idx, span := range decoded {
+		parsedSpans[idx] = span.ToSpan()
 	}
 
 	return parsedSpans, nil
 }
 
 func (span *spanV1) ToSpan() proxy.Span {
-	proxySpan := proxy.NewSpan(cache.String(span.Name),
-		span.TraceID, span.ID, span.ParentID.OrZero())
+	proxySpan := proxy.NewSpan(span.Name, span.TraceID, span.ID, span.ParentID)
 
 	for _, annotation := range span.Annotations {
+		if annotation.Timestamp == 0 {
+			continue
+		}
+
 		proxySpan.AddTiming(annotation.Value,
 			proxy.Microseconds(annotation.Timestamp))
 
-		if annotation.Endpoint != nil && proxySpan.Service == "" {
-			proxySpan.Service = cache.String(annotation.Endpoint.ServiceName)
+		if proxySpan.Service == "" && annotation.Endpoint.ServiceName != "" {
+			proxySpan.Service = annotation.Endpoint.ServiceName
 		}
 	}
 
-	for _, annotation := range span.BinaryAnnotations {
-		proxySpan.AddTag(
-			cache.String(annotation.Key),
-			toStringCached(annotation.Value))
+	proxySpan.Tags = make(map[string]string, 1+len(span.BinaryAnnotations))
 
-		if annotation.Endpoint != nil && proxySpan.Service == "" {
-			proxySpan.Service = cache.String(annotation.Endpoint.ServiceName)
+	for _, annotation := range span.BinaryAnnotations {
+		proxySpan.AddTag(annotation.Key, annotation.Value)
+
+		if proxySpan.Service == "" && annotation.Endpoint.ServiceName != "" {
+			proxySpan.Service = annotation.Endpoint.ServiceName
 		}
 	}
 
 	proxySpan.AddTag(tagProtocolVersion, tagJsonV1)
 
-	if span.Timestamp != nil {
-		proxySpan.Timestamp = proxy.Microseconds(*span.Timestamp)
+	if span.Timestamp != 0 {
+		proxySpan.Timestamp = proxy.Microseconds(span.Timestamp)
 	}
 
-	if span.Duration != nil {
-		proxySpan.Duration = time.Duration(*span.Duration) * time.Microsecond
+	if span.Duration != 0 {
+		proxySpan.Duration = time.Duration(span.Duration) * time.Microsecond
 	}
 
 	fillInTimestamp(&proxySpan)

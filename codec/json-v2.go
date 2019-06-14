@@ -1,7 +1,6 @@
 package codec
 
 import (
-	"github.com/flachnetz/dd-zipkin-proxy/cache"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"github.com/pkg/errors"
 	"io"
@@ -10,13 +9,13 @@ import (
 )
 
 type spanV2 struct {
-	TraceID  Id  `json:"traceId"`
-	ID       Id  `json:"id"`
-	ParentID *Id `json:"parentId"`
+	TraceID  Id `json:"traceId"`
+	ID       Id `json:"id"`
+	ParentID Id `json:"parentId"`
 
 	Name string `json:"name"`
 
-	Endpoint *endpoint `json:"localEndpoint"`
+	Endpoint endpoint `json:"localEndpoint"`
 
 	Tags map[string]string `json:"tags"`
 
@@ -32,26 +31,22 @@ func ParseJsonV2(input io.Reader) ([]proxy.Span, error) {
 		return nil, errors.WithMessage(err, "parse spans for json v2")
 	}
 
-	parsedSpans := make([]proxy.Span, 0, len(decoded))
-	for _, span := range decoded {
-		parsedSpans = append(parsedSpans, span.ToSpan())
+	parsedSpans := make([]proxy.Span, len(decoded))
+	for idx, span := range decoded {
+		parsedSpans[idx] = span.ToSpan()
 	}
 
 	return parsedSpans, nil
 }
 
 func (span *spanV2) ToSpan() proxy.Span {
-	proxySpan := proxy.NewSpan(cache.String(span.Name),
-		span.TraceID, span.ID, span.ParentID.OrZero())
+	proxySpan := proxy.NewSpan(span.Name, span.TraceID, span.ID, span.ParentID)
 
-	if span.Endpoint != nil {
-		proxySpan.Service = cache.String(span.Endpoint.ServiceName)
+	if span.Endpoint.ServiceName != "" {
+		proxySpan.Service = span.Endpoint.ServiceName
 	}
 
-	for key, value := range span.Tags {
-		proxySpan.AddTag(cache.String(key), cache.String(value))
-	}
-
+	proxySpan.Tags = span.Tags
 	proxySpan.AddTag(tagProtocolVersion, tagJsonV2)
 
 	proxySpan.Timestamp = proxy.Microseconds(span.Timestamp)

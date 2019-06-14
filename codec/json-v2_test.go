@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"bytes"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	. "github.com/onsi/gomega"
 	"strings"
@@ -28,6 +29,7 @@ func TestParseJsonV2(t *testing.T) {
 
 		Tags: map[string]string{
 			"http.path":        "/my/path",
+			"http.status":      "404",
 			tagProtocolVersion: tagJsonV2,
 		},
 
@@ -36,6 +38,18 @@ func TestParseJsonV2(t *testing.T) {
 			CR: proxy.Timestamp(1560276970*time.Second + 50*time.Millisecond),
 		},
 	}))
+}
+
+func BenchmarkParseJsonV2(b *testing.B) {
+	data := []byte(encodedJsonV2)
+
+	var sum proxy.Id
+	for idx := 0; idx < b.N; idx++ {
+		spans, _ := ParseJsonV2(bytes.NewReader(data))
+		for _, span := range spans {
+			sum += span.Id
+		}
+	}
 }
 
 const encodedJsonV2 = `[
@@ -51,7 +65,8 @@ const encodedJsonV2 = `[
 			},
 
 			"tags": {
-				"http.path": "/my/path"
+				"http.path": "/my/path",
+				"http.status": "404"
 			},
 
 			"kind": "CLIENT",

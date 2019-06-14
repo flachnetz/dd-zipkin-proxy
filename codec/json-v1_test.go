@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"bytes"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	. "github.com/onsi/gomega"
 	"strings"
@@ -31,16 +32,27 @@ func TestParseJsonV1(t *testing.T) {
 
 		Tags: map[string]string{
 			"http.path":        "/my/path",
+			"http.status":      "404",
 			tagProtocolVersion: tagJsonV1,
 		},
 
 		Timings: proxy.Timings{
 			CS: proxy.Timestamp(1560276970 * time.Second),
 			CR: proxy.Timestamp(1560276971 * time.Second),
-			SR: proxy.Timestamp(1560276972 * time.Second),
-			SS: proxy.Timestamp(1560276973 * time.Second),
 		},
 	}))
+}
+
+func BenchmarkParseJsonV1(b *testing.B) {
+	data := []byte(encodedJsonV1)
+
+	var sum proxy.Id
+	for idx := 0; idx < b.N; idx++ {
+		spans, _ := ParseJsonV1(bytes.NewReader(data))
+		for _, span := range spans {
+			sum += span.Id
+		}
+	}
 }
 
 const encodedJsonV1 = `[
@@ -64,24 +76,20 @@ const encodedJsonV1 = `[
 					"timestamp": 1560276971000000,
 					"value": "cr",
 					"endpoint": {"serviceName": "my-service"}
-				},
-				{
-					"timestamp": 1560276972000000,
-					"value": "sr",
-					"endpoint": {"serviceName": "my-service"}
-				},
-				{
-					"timestamp": 1560276973000000,
-					"value": "ss",
-					"endpoint": {"serviceName": "my-service"}
 				}
-
 			],
 
 			"binaryAnnotations": [
 				{
 					"key": "http.path",
 					"value": "/my/path", 
+					"endpoint": {
+						"serviceName": "my-service"
+					}
+				},
+				{
+					"key": "http.status",
+					"value": 404, 
 					"endpoint": {
 						"serviceName": "my-service"
 					}

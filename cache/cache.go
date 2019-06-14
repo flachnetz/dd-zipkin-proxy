@@ -6,13 +6,13 @@ import (
 	"github.com/rcrowley/go-metrics"
 	"io"
 	"reflect"
+	"sync/atomic"
 	"unsafe"
 )
 
 var binaryCache = NewLRUCache(50000)
 
-var metricHitCount = metrics.NewMeter()
-var metricMissCount = metrics.NewMeter()
+var metricMissCount, metricHitCount uint64
 var metricReadBinarySize = metrics.NewHistogram(metrics.NewUniformSample(1024 * 8))
 
 var invalidDataLength = thrift.NewTProtocolExceptionWithType(thrift.INVALID_DATA, errors.New("invalid data length"))
@@ -94,9 +94,12 @@ func ByteSlice(value []byte) []byte {
 	return byteSlice(false, value)
 }
 
+func StringForByteSliceCopy(value []byte) string {
+	return byteSliceToString(byteSlice(true, value))
+}
+
 func StringForByteSliceNoCopy(value []byte) string {
-	value = byteSlice(false, value)
-	return byteSliceToString(value)
+	return byteSliceToString(byteSlice(false, value))
 }
 
 func byteSlice(copyOnInsert bool, value []byte) []byte {
@@ -104,7 +107,7 @@ func byteSlice(copyOnInsert bool, value []byte) []byte {
 
 	cachedValue := binaryCache.Get(key)
 	if cachedValue != nil {
-		metricHitCount.Mark(1)
+		atomic.AddUint64(&metricHitCount, 1)
 		return cachedValue
 	}
 
@@ -112,7 +115,7 @@ func byteSlice(copyOnInsert bool, value []byte) []byte {
 		value = append([]byte(nil), value...)
 	}
 
-	metricMissCount.Mark(1)
+	atomic.AddUint64(&metricMissCount, 1)
 	binaryCache.Set(value)
 
 	return value
@@ -146,14 +149,10 @@ func byteSliceToString(bytes []byte) string {
 }
 
 func RegisterCacheMetrics(m metrics.Registry) {
-	_ = m.Register("binary.cache.hit.count", metricHitCount)
-	_ = m.Register("binary.cache.miss.count", metricMissCount)
-	_ = m.Register("binary.read.size", metricReadBinarySize)
-
 	metrics.NewRegisteredFunctionalGaugeFloat64("binary.cache.hit.rate", m, func() float64 {
-		hitCount := metricHitCount.Rate1()
-		missCount := metricMissCount.Rate1()
-		return 1000 * hitCount / (hitCount + missCount)
+		hitCount := atomic.SwapUint64(&metricHitCount, 0)
+		missCount := atomic.SwapUint64(&metricMissCount, 0)
+		return 1000 * float64(hitCount) / float64(hitCount+missCount)
 	})
 
 	metrics.NewRegisteredFunctionalGauge("binary.cache.size", m, func() int64 {
