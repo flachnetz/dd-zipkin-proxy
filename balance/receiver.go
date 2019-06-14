@@ -45,7 +45,7 @@ func Consume(consumerGroup sarama.ConsumerGroup, topic string, callback SpanCall
 }
 
 func decodeKafkaMessage(message *sarama.ConsumerMessage) (proxy.Span, error) {
-	proxySpan, err := codec.BinaryDecode(bytes.NewBuffer(message.Value))
+	proxySpan, err := codec.BinaryDecode(bytes.NewReader(message.Value))
 	return proxySpan, errors.WithMessage(err, "deserialize avro message")
 }
 
