@@ -133,6 +133,11 @@ func (p *Parser) Read() (Token, error) {
 	case TypeNull:
 		return p.readNull()
 
+	case TypeObjectBegin:
+		buf := p.b.buffer[p.b.tail : p.b.tail+1]
+		p.b.tail += 1
+		return Token{Type: TypeObjectBegin, Value: buf}, nil
+
 	default:
 		return errToken, errors.Errorf("expected literal, got '%s'", next)
 	}

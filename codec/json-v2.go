@@ -1,9 +1,9 @@
 package codec
 
 import (
-	"github.com/flachnetz/dd-zipkin-proxy/cache"
 	"github.com/flachnetz/dd-zipkin-proxy/codec/hyperjson"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
+	"github.com/modern-go/reflect2"
 	"github.com/pkg/errors"
 	"io"
 	"strings"
@@ -40,9 +40,10 @@ func ParseJsonV2(input io.Reader) ([]proxy.Span, error) {
 	defer buffers.Put(buf)
 
 	r := hyperjson.ForReader(input, buf.([]byte))
-	decoded, err := hyParseSpanSlice(r)
 
-	if err != nil {
+	var decoded []spanV2
+
+	if err := decoder(reflect2.NoEscape(unsafe.Pointer(&decoded)), r); err != nil {
 		return nil, errors.WithMessage(err, "parse spans for json v2")
 	}
 
@@ -84,219 +85,24 @@ func (span *spanV2) ToSpan() proxy.Span {
 	return proxySpan
 }
 
-func hyParseSpanSlice(p *hyperjson.Parser) ([]spanV2, error) {
-	var result []spanV2
-
-	if err := p.ConsumeArrayBegin(); err != nil {
-		return nil, err
-	}
-
-	for {
-		next, err := p.NextType()
-		if err != nil {
-			return nil, err
-		}
-
-		// stop at the end of the array
-		if next == hyperjson.TypeArrayEnd {
-			return result, p.ConsumeArrayEnd()
-		}
-
-		// parse the span
-		span, err := hyParseSpan(p)
-		if err != nil {
-			return nil, err
-		}
-
-		result = append(result, span)
-	}
-}
-
-func hyParseSpan(p *hyperjson.Parser) (spanV2, error) {
-	var result spanV2
-
-	if err := p.ConsumeObjectBegin(); err != nil {
-		return result, err
-	}
-
-	for {
-		next, err := p.NextType()
-		if err != nil {
-			return result, err
-		}
-
-		if next == hyperjson.TypeObjectEnd {
-			return result, p.ConsumeObjectEnd()
-		}
-
-		// read the key
-		keyToken, err := p.ReadString()
-		if err != nil {
-			return result, err
-		}
-
-		var tok hyperjson.Token
-
-		switch byteSliceToString(keyToken.Value) {
-		case "id":
-			result.ID, err = hyParseId(p)
-
-		case "traceId":
-			result.TraceID, err = hyParseId(p)
-
-		case "parentId":
-			result.ParentID, err = hyParseId(p)
-
-		case "name":
-			tok, err = p.ReadString()
-			result.Name = cache.StringForByteSliceCopy(tok.Value)
-
-		case "kind":
-			tok, err = p.ReadString()
-			result.Kind = cache.StringForByteSliceCopy(tok.Value)
-
-		case "timestamp":
-			result.Timestamp, err = hyParseUint64(p)
-
-		case "duration":
-			result.Duration, err = hyParseUint64(p)
-
-		case "localEndpoint":
-			result.Endpoint, err = hyParseEndpoint(p)
-
-		case "tags":
-			result.Tags, err = hyParseMap(p)
-
-		default:
-			err = p.Skip()
-		}
-
-		if err != nil {
-			return result, err
-		}
-	}
-}
-
-func hyParseEndpoint(p *hyperjson.Parser) (endpoint, error) {
-	var result endpoint
-
+func idValueDecoder(target unsafe.Pointer, p *hyperjson.Parser) error {
 	next, err := p.NextType()
 	if err != nil {
-		return result, err
+		return err
 	}
 
 	if next == hyperjson.TypeNull {
-		return result, p.Skip()
-	}
-
-	if err := p.ConsumeObjectBegin(); err != nil {
-		return result, err
-	}
-
-	for {
-		next, err := p.NextType()
-		if err != nil {
-			return result, err
-		}
-
-		if next == hyperjson.TypeObjectEnd {
-			return result, p.ConsumeObjectEnd()
-		}
-
-		// read the key
-		keyToken, err := p.ReadString()
-		if err != nil {
-			return result, err
-		}
-
-		if byteSliceToString(keyToken.Value) == "serviceName" {
-			// read the value
-			valueToken, err := p.Read()
-			if err != nil {
-				return result, err
-			}
-
-			result.ServiceName = cache.StringForByteSliceCopy(valueToken.Value)
-		} else {
-			if err := p.Skip(); err != nil {
-				return result, err
-			}
-		}
-	}
-}
-
-func hyParseMap(p *hyperjson.Parser) (map[string]string, error) {
-	if err := p.ConsumeObjectBegin(); err != nil {
-		return nil, err
-	}
-
-	var result map[string]string
-	for {
-		next, err := p.NextType()
-		if err != nil {
-			return nil, err
-		}
-
-		if next == hyperjson.TypeObjectEnd {
-			return result, p.ConsumeObjectEnd()
-		}
-
-		if result == nil {
-			result = make(map[string]string)
-		}
-
-		keyToken, err := p.ReadString()
-		if err != nil {
-			return nil, err
-		}
-
-		key := cache.StringForByteSliceCopy(keyToken.Value)
-
-		valueToken, err := p.Read()
-		if err != nil {
-			return nil, err
-		}
-
-		value := cache.StringForByteSliceCopy(valueToken.Value)
-		result[key] = value
-	}
-}
-
-func hyParseUint64(p *hyperjson.Parser) (uint64, error) {
-	tok, err := p.ReadNumber()
-	if err != nil {
-		return 0, errors.WithMessage(err, "decode timestamp value")
-	}
-
-	var result uint64
-	for _, ch := range tok.Value {
-		if ch < '0' || ch > '9' {
-			return 0, errors.Errorf("Unexpected character in number: '%c'", ch)
-		}
-
-		result = result*10 + uint64(ch-'0')
-	}
-
-	return result, nil
-}
-
-func hyParseId(p *hyperjson.Parser) (proxy.Id, error) {
-	next, err := p.NextType()
-	if err != nil {
-		return 0, err
-	}
-
-	if next == hyperjson.TypeNull {
-		return 0, p.Skip()
+		*(*Id)(target) = 0
+		return p.Skip()
 	}
 
 	tok, err := p.ReadString()
 	if err != nil {
-		return 0, errors.WithMessage(err, "decode id value")
+		return errors.WithMessage(err, "decode id value")
 	}
 
 	if len(tok.Value) > 16 {
-		return 0, errors.New("hex value too large")
+		return errors.New("hex value too large")
 	}
 
 	var result proxy.Id
@@ -312,11 +118,13 @@ func hyParseId(p *hyperjson.Parser) (proxy.Id, error) {
 			result = (result << 4) | proxy.Id(c-'A') + 10
 
 		default:
-			return 0, errors.Errorf("hex value must only contain [0-9a-f], got '%c'", c)
+			return errors.Errorf("hex value must only contain [0-9a-f], got '%c'", c)
 		}
 	}
 
-	return result, nil
+	*(*Id)(target) = result
+
+	return nil
 }
 
 // Returns a string that shares the data with the given byte slice.
@@ -327,3 +135,49 @@ func byteSliceToString(bytes []byte) string {
 
 	return *(*string)(unsafe.Pointer(&bytes))
 }
+
+var decoder hyperjson.ValueDecoder = hyperjson.MakeSliceDecoder(
+	reflect2.TypeOf([]spanV2{}).(reflect2.SliceType),
+	hyperjson.MakeStructDecoder(map[string]hyperjson.Field{
+		"id": {
+			Offset:  hyperjson.OffsetOf(spanV2{}, "ID"),
+			Decoder: idValueDecoder,
+		},
+		"traceId": {
+			Offset:  hyperjson.OffsetOf(spanV2{}, "TraceID"),
+			Decoder: idValueDecoder,
+		},
+		"parentId": {
+			Offset:  hyperjson.OffsetOf(spanV2{}, "ParentID"),
+			Decoder: idValueDecoder,
+		},
+		"timestamp": {
+			Offset:  hyperjson.OffsetOf(spanV2{}, "Timestamp"),
+			Decoder: hyperjson.Uint64ValueDecoder,
+		},
+		"duration": {
+			Offset:  hyperjson.OffsetOf(spanV2{}, "Duration"),
+			Decoder: hyperjson.Uint64ValueDecoder,
+		},
+		"name": {
+			Offset:  hyperjson.OffsetOf(spanV2{}, "Name"),
+			Decoder: hyperjson.StringValueDecoder,
+		},
+		"tags": {
+			Offset:  hyperjson.OffsetOf(spanV2{}, "Tags"),
+			Decoder: hyperjson.MakeMapDecoder(hyperjson.StringValueDecoder, hyperjson.StringValueDecoder),
+		},
+		"kind": {
+			Offset:  hyperjson.OffsetOf(spanV2{}, "Kind"),
+			Decoder: hyperjson.StringValueDecoder,
+		},
+		"localEndpoint": {
+			Offset: hyperjson.OffsetOf(spanV2{}, "Endpoint"),
+			Decoder: hyperjson.MakeStructDecoder(map[string]hyperjson.Field{
+				"serviceName": {
+					Decoder: hyperjson.StringValueDecoder,
+					Offset:  hyperjson.OffsetOf(endpoint{}, "ServiceName"),
+				},
+			}),
+		},
+	}))
