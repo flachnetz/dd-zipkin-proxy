@@ -1,10 +1,14 @@
 package codec
 
 import (
+	"github.com/flachnetz/dd-zipkin-proxy/codec/hyperjson"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
+	"github.com/modern-go/reflect2"
 	"github.com/pkg/errors"
 	"io"
+	"sync"
 	"time"
+	"unsafe"
 )
 
 type spanV1 struct {
@@ -17,12 +21,12 @@ type spanV1 struct {
 
 	Name string `json:"name"`
 
-	Timestamp int64 `json:"timestamp"`
-	Duration  int64 `json:"duration"`
+	Timestamp uint64 `json:"timestamp"`
+	Duration  uint64 `json:"duration"`
 }
 
 type annotationV1 struct {
-	Timestamp int64    `json:"timestamp"`
+	Timestamp uint64   `json:"timestamp"`
 	Value     string   `json:"value"`
 	Endpoint  endpoint `json:"endpoint"`
 }
@@ -37,10 +41,32 @@ type endpoint struct {
 	ServiceName string `json:"serviceName"`
 }
 
-func ParseJsonV1(input io.Reader) ([]proxy.Span, error) {
-	var decoded []spanV1
+var poolSpansV1 = sync.Pool{
+	New: func() interface{} {
+		return make([]spanV1, 64)
+	},
+}
 
-	if err := jsonConfig.NewDecoder(input).Decode(&decoded); err != nil {
+func ParseJsonV1(input io.Reader) ([]proxy.Span, error) {
+	// get a buffer to re-use
+	buf := bufferPool.Get()
+	defer bufferPool.Put(buf)
+
+	// get a new reader and initialize it with the pooled buffer.
+	r := hyperjson.NewWithReader(input, buf.([]byte))
+
+	// we know, that the reader wont escape, sadly, go doesnt know that,
+	// so we give it a little hint
+	p := (*hyperjson.Parser)(reflect2.NoEscape(unsafe.Pointer(r)))
+
+	// we can also re-use the slice we use for decoding
+	ifSlice := poolSpansV1.Get()
+	defer poolSpansV1.Put(ifSlice)
+
+	// decode spans into the span slice.
+	decoded := ifSlice.([]spanV1)[:0]
+
+	if err := decoderSliceSpanV1(reflect2.NoEscape(unsafe.Pointer(&decoded)), p); err != nil {
 		return nil, errors.WithMessage(err, "parse spans for json v1")
 	}
 
@@ -61,7 +87,7 @@ func (span *spanV1) ToSpan() proxy.Span {
 		}
 
 		proxySpan.AddTiming(annotation.Value,
-			proxy.Microseconds(annotation.Timestamp))
+			proxy.Microseconds(int64(annotation.Timestamp)))
 
 		if proxySpan.Service == "" && annotation.Endpoint.ServiceName != "" {
 			proxySpan.Service = annotation.Endpoint.ServiceName
@@ -81,7 +107,7 @@ func (span *spanV1) ToSpan() proxy.Span {
 	proxySpan.AddTag(tagProtocolVersion, tagJsonV1)
 
 	if span.Timestamp != 0 {
-		proxySpan.Timestamp = proxy.Microseconds(span.Timestamp)
+		proxySpan.Timestamp = proxy.Microseconds(int64(span.Timestamp))
 	}
 
 	if span.Duration != 0 {
@@ -112,3 +138,109 @@ func fillInTimestamp(proxySpan *proxy.Span) {
 		proxySpan.Duration = 1 * time.Millisecond
 	}
 }
+
+func spanV1ValueDecoder() hyperjson.ValueDecoder {
+	decoder := hyperjson.MakeStructDecoder([]hyperjson.Field{
+		{
+			JsonName: "id",
+			Offset:   hyperjson.OffsetOf(spanV1{}, "ID"),
+			Decoder:  idValueDecoder,
+		},
+		{
+			JsonName: "traceId",
+			Offset:   hyperjson.OffsetOf(spanV1{}, "TraceID"),
+			Decoder:  idValueDecoder,
+		},
+		{
+			JsonName: "parentId",
+			Offset:   hyperjson.OffsetOf(spanV1{}, "ParentID"),
+			Decoder:  idValueDecoder,
+		},
+		{
+			JsonName: "timestamp",
+			Offset:   hyperjson.OffsetOf(spanV1{}, "Timestamp"),
+			Decoder:  hyperjson.Uint64ValueDecoder,
+		},
+		{
+			JsonName: "duration",
+			Offset:   hyperjson.OffsetOf(spanV1{}, "Duration"),
+			Decoder:  hyperjson.Uint64ValueDecoder,
+		},
+		{
+			JsonName: "name",
+			Offset:   hyperjson.OffsetOf(spanV1{}, "Name"),
+			Decoder:  hyperjson.StringValueDecoder,
+		},
+		{
+			JsonName: "binaryAnnotations",
+			Offset:   hyperjson.OffsetOf(spanV1{}, "BinaryAnnotations"),
+			Decoder: hyperjson.MakeSliceDecoder(
+				reflect2.TypeOf([]binaryAnnotationV1{}).(reflect2.SliceType),
+				hyperjson.MakeStructDecoder([]hyperjson.Field{
+					{
+						JsonName: "key",
+						Offset:   hyperjson.OffsetOf(binaryAnnotationV1{}, "Key"),
+						Decoder:  hyperjson.StringValueDecoder,
+					},
+					{
+						JsonName: "value",
+						Offset:   hyperjson.OffsetOf(binaryAnnotationV1{}, "Value"),
+						Decoder:  anyValueDecoder,
+					},
+					{
+						JsonName: "endpoint",
+						Offset:   hyperjson.OffsetOf(binaryAnnotationV1{}, "Endpoint"),
+						Decoder:  endpointValueDecoder,
+					},
+				})),
+		},
+		{
+			JsonName: "annotations",
+			Offset:   hyperjson.OffsetOf(spanV1{}, "Annotations"),
+			Decoder: hyperjson.MakeArrayDecoder(
+				reflect2.TypeOf([4]annotationV1{}).(reflect2.ArrayType),
+				hyperjson.MakeStructDecoder([]hyperjson.Field{
+					{
+						JsonName: "timestamp",
+						Offset:   hyperjson.OffsetOf(annotationV1{}, "Timestamp"),
+						Decoder:  hyperjson.Uint64ValueDecoder,
+					},
+					{
+						JsonName: "value",
+						Offset:   hyperjson.OffsetOf(annotationV1{}, "Value"),
+						Decoder:  hyperjson.StringValueDecoder,
+					},
+					{
+						JsonName: "endpoint",
+						Offset:   hyperjson.OffsetOf(annotationV1{}, "Endpoint"),
+						Decoder:  endpointValueDecoder,
+					},
+				})),
+		},
+	})
+
+	return func(target unsafe.Pointer, p *hyperjson.Parser) error {
+		span := (*spanV1)(target)
+
+		span.TraceID = 0
+		span.ID = 0
+		span.ParentID = 0
+		span.Duration = 0
+		span.Timestamp = 0
+		span.Name = ""
+
+		span.Annotations = [4]annotationV1{}
+
+		for idx := range span.BinaryAnnotations {
+			span.BinaryAnnotations[idx] = binaryAnnotationV1{}
+		}
+
+		span.BinaryAnnotations = span.BinaryAnnotations[:0]
+
+		return decoder(target, p)
+	}
+}
+
+var decoderSliceSpanV1 = hyperjson.MakeSliceDecoder(
+	reflect2.TypeOf([]spanV1{}).(reflect2.SliceType),
+	spanV1ValueDecoder())

@@ -7,7 +7,6 @@ import (
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"io"
 	"math"
-	"sync"
 	"time"
 )
 
@@ -152,14 +151,6 @@ func BinaryDecode(r *bytes.Reader) (proxy.Span, error) {
 	return span, nil
 }
 
-const byteSlicesSize = 1024
-
-var byteSlices = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, byteSlicesSize)
-	},
-}
-
 func readString(r *bytes.Reader) (string, error) {
 	len, err := readLong(r)
 	if err != nil {
@@ -176,7 +167,7 @@ func readString(r *bytes.Reader) (string, error) {
 		return "", nil
 	}
 
-	if len > byteSlicesSize {
+	if len > pooledBufferSliceLength {
 		bb := make([]byte, len)
 		if _, err = io.ReadFull(r, bb); err != nil {
 			return "", err
@@ -186,10 +177,10 @@ func readString(r *bytes.Reader) (string, error) {
 
 	} else {
 		// get a previously used byte slice form the pool
-		byteSliceIf := byteSlices.Get()
+		byteSliceIf := bufferPool.Get()
 		bb := byteSliceIf.([]byte)[:len]
 
-		defer byteSlices.Put(byteSliceIf)
+		defer bufferPool.Put(byteSliceIf)
 
 		// read the data
 		_, err = io.ReadFull(r, bb)

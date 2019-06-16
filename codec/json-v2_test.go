@@ -41,7 +41,7 @@ func TestParseJsonV2(t *testing.T) {
 }
 
 func BenchmarkParseJsonV2(b *testing.B) {
-	data := []byte(encodedJsonV2)
+	data := jsonCompact([]byte(encodedJsonV2))
 
 	var sum proxy.Id
 	for idx := 0; idx < b.N; idx++ {

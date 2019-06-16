@@ -7,7 +7,6 @@ import (
 	"github.com/pkg/errors"
 	"io"
 	"strings"
-	"sync"
 	"time"
 	"unsafe"
 )
@@ -29,24 +28,25 @@ type spanV2 struct {
 	Duration  uint64 `json:"duration"`
 }
 
-var buffers = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 8*1024)
-	},
-}
-
 func ParseJsonV2(input io.Reader) ([]proxy.Span, error) {
-	buf := buffers.Get()
-	defer buffers.Put(buf)
+	// get a buffer to re-use
+	buf := bufferPool.Get()
+	defer bufferPool.Put(buf)
 
-	r := hyperjson.ForReader(input, buf.([]byte))
+	// get a new reader and initialize it with the pooled buffer.
+	r := hyperjson.NewWithReader(input, buf.([]byte))
 
+	// we know, that the reader wont escape, sadly, go doesnt know that,
+	// so we give it a little hint
+	p := (*hyperjson.Parser)(reflect2.NoEscape(unsafe.Pointer(r)))
+
+	// decode spans into the span slice.
 	var decoded []spanV2
-
-	if err := decoder(reflect2.NoEscape(unsafe.Pointer(&decoded)), r); err != nil {
+	if err := decoderSliceSpanV2(reflect2.NoEscape(unsafe.Pointer(&decoded)), p); err != nil {
 		return nil, errors.WithMessage(err, "parse spans for json v2")
 	}
 
+	// now convert them to span objects
 	parsedSpans := make([]proxy.Span, len(decoded))
 	for idx, span := range decoded {
 		parsedSpans[idx] = span.ToSpan()
@@ -127,57 +127,62 @@ func idValueDecoder(target unsafe.Pointer, p *hyperjson.Parser) error {
 	return nil
 }
 
-// Returns a string that shares the data with the given byte slice.
-func byteSliceToString(bytes []byte) string {
-	if bytes == nil {
-		return ""
-	}
+func spanV2ValueDecoder() hyperjson.ValueDecoder {
+	decoder := hyperjson.MakeStructDecoder([]hyperjson.Field{
+		{
+			JsonName: "id",
+			Offset:   hyperjson.OffsetOf(spanV2{}, "ID"),
+			Decoder:  idValueDecoder,
+		},
+		{
+			JsonName: "traceId",
+			Offset:   hyperjson.OffsetOf(spanV2{}, "TraceID"),
+			Decoder:  idValueDecoder,
+		},
+		{
+			JsonName: "parentId",
+			Offset:   hyperjson.OffsetOf(spanV2{}, "ParentID"),
+			Decoder:  idValueDecoder,
+		},
+		{
+			JsonName: "timestamp",
+			Offset:   hyperjson.OffsetOf(spanV2{}, "Timestamp"),
+			Decoder:  hyperjson.Uint64ValueDecoder,
+		},
+		{
+			JsonName: "duration",
+			Offset:   hyperjson.OffsetOf(spanV2{}, "Duration"),
+			Decoder:  hyperjson.Uint64ValueDecoder,
+		},
+		{
+			JsonName: "name",
+			Offset:   hyperjson.OffsetOf(spanV2{}, "Name"),
+			Decoder:  hyperjson.StringValueDecoder,
+		},
+		{
+			JsonName: "tags",
+			Offset:   hyperjson.OffsetOf(spanV2{}, "Tags"),
+			Decoder:  hyperjson.MakeMapDecoder(hyperjson.StringValueDecoder, hyperjson.StringValueDecoder),
+		},
+		{
+			JsonName: "kind",
+			Offset:   hyperjson.OffsetOf(spanV2{}, "Kind"),
+			Decoder:  hyperjson.StringValueDecoder,
+		},
+		{
+			JsonName: "localEndpoint",
+			Offset:   hyperjson.OffsetOf(spanV2{}, "Endpoint"),
+			Decoder:  endpointValueDecoder,
+		},
+	})
 
-	return *(*string)(unsafe.Pointer(&bytes))
+	return func(target unsafe.Pointer, p *hyperjson.Parser) error {
+		// we might be reusing a span, so clear it before decoding into it
+		*(*spanV2)(target) = spanV2{}
+		return decoder(target, p)
+	}
 }
 
-var decoder hyperjson.ValueDecoder = hyperjson.MakeSliceDecoder(
+var decoderSliceSpanV2 = hyperjson.MakeSliceDecoder(
 	reflect2.TypeOf([]spanV2{}).(reflect2.SliceType),
-	hyperjson.MakeStructDecoder(map[string]hyperjson.Field{
-		"id": {
-			Offset:  hyperjson.OffsetOf(spanV2{}, "ID"),
-			Decoder: idValueDecoder,
-		},
-		"traceId": {
-			Offset:  hyperjson.OffsetOf(spanV2{}, "TraceID"),
-			Decoder: idValueDecoder,
-		},
-		"parentId": {
-			Offset:  hyperjson.OffsetOf(spanV2{}, "ParentID"),
-			Decoder: idValueDecoder,
-		},
-		"timestamp": {
-			Offset:  hyperjson.OffsetOf(spanV2{}, "Timestamp"),
-			Decoder: hyperjson.Uint64ValueDecoder,
-		},
-		"duration": {
-			Offset:  hyperjson.OffsetOf(spanV2{}, "Duration"),
-			Decoder: hyperjson.Uint64ValueDecoder,
-		},
-		"name": {
-			Offset:  hyperjson.OffsetOf(spanV2{}, "Name"),
-			Decoder: hyperjson.StringValueDecoder,
-		},
-		"tags": {
-			Offset:  hyperjson.OffsetOf(spanV2{}, "Tags"),
-			Decoder: hyperjson.MakeMapDecoder(hyperjson.StringValueDecoder, hyperjson.StringValueDecoder),
-		},
-		"kind": {
-			Offset:  hyperjson.OffsetOf(spanV2{}, "Kind"),
-			Decoder: hyperjson.StringValueDecoder,
-		},
-		"localEndpoint": {
-			Offset: hyperjson.OffsetOf(spanV2{}, "Endpoint"),
-			Decoder: hyperjson.MakeStructDecoder(map[string]hyperjson.Field{
-				"serviceName": {
-					Decoder: hyperjson.StringValueDecoder,
-					Offset:  hyperjson.OffsetOf(endpoint{}, "ServiceName"),
-				},
-			}),
-		},
-	}))
+	spanV2ValueDecoder())

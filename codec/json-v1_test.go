@@ -2,6 +2,7 @@ package codec
 
 import (
 	"bytes"
+	"encoding/json"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	. "github.com/onsi/gomega"
 	"strings"
@@ -43,8 +44,14 @@ func TestParseJsonV1(t *testing.T) {
 	}))
 }
 
+func jsonCompact(input []byte) []byte {
+	var buf bytes.Buffer
+	_ = json.Compact(&buf, input)
+	return buf.Bytes()
+}
+
 func BenchmarkParseJsonV1(b *testing.B) {
-	data := []byte(encodedJsonV1)
+	data := jsonCompact([]byte(encodedJsonV1))
 
 	var sum proxy.Id
 	for idx := 0; idx < b.N; idx++ {

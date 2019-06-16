@@ -33,7 +33,7 @@ func Uint64ValueDecoder(target unsafe.Pointer, p *Parser) error {
 func StringValueDecoder(target unsafe.Pointer, p *Parser) error {
 	tok, err := p.ReadString()
 	if err != nil {
-		return errors.WithMessage(err, "decode timestamp value")
+		return errors.WithMessage(err, "decode value")
 	}
 
 	// assign to target
@@ -44,116 +44,182 @@ func StringValueDecoder(target unsafe.Pointer, p *Parser) error {
 
 func MakeMapDecoder(keyDecoder, valueDecoder ValueDecoder) ValueDecoder {
 	return func(target unsafe.Pointer, p *Parser) error {
-		tok, err := p.Read()
-		if err != nil {
-			return err
+		if err := p.ConsumeObjectBegin(); err != nil {
+			return errors.WithMessage(err, "begin object")
 		}
 
-		if tok.Type == TypeNull {
-			return nil
-		}
-
-		if tok.Type == TypeObjectBegin {
-			var result map[string]string
-			for {
-				next, err := p.NextType()
-				if err != nil {
-					return err
-				}
-
-				if next == TypeObjectEnd {
-					*(*map[string]string)(target) = result
-					return p.ConsumeObjectEnd()
-				}
-
-				// decode the key to a string.
-				var key string
-				if err := keyDecoder(reflect2.NoEscape(unsafe.Pointer(&key)), p); err != nil {
-					return err
-				}
-
-				// decode the value to a string
-				var value string
-				if err := valueDecoder(reflect2.NoEscape(unsafe.Pointer(&value)), p); err != nil {
-					return err
-				}
-
-				if result == nil {
-					result = make(map[string]string)
-				}
-
-				result[key] = value
+		var result map[string]string
+		for {
+			next, err := p.NextType()
+			if err != nil {
+				return err
 			}
-		}
 
-		return errors.Errorf("Expected object, got %s", tok.Type)
+			if next == TypeObjectEnd {
+				*(*map[string]string)(target) = result
+				return p.ConsumeObjectEnd()
+			}
+
+			// decode the key to a string.
+			var key string
+			if err := keyDecoder(reflect2.NoEscape(unsafe.Pointer(&key)), p); err != nil {
+				return err
+			}
+
+			// decode the value to a string
+			var value string
+			if err := valueDecoder(reflect2.NoEscape(unsafe.Pointer(&value)), p); err != nil {
+				return err
+			}
+
+			if result == nil {
+				result = make(map[string]string)
+			}
+
+			result[key] = value
+		}
 	}
 }
 
 func MakeSliceDecoder(sliceType reflect2.SliceType, decoder ValueDecoder) ValueDecoder {
 	return func(target unsafe.Pointer, p *Parser) error {
 		if err := p.ConsumeArrayBegin(); err != nil {
-			return err
+			return errors.WithMessage(err, "decoding "+sliceType.String())
 		}
 
-		idx := sliceType.UnsafeLengthOf(target)
-		sliceType.UnsafeGrow(target, idx+1)
+		var idx int
+		for {
+			// check the next token type
+			next, err := p.NextType()
+			if err != nil {
+				return err
+			}
 
-		el := sliceType.UnsafeGetIndex(target, idx)
-		if err := decoder(el, p); err != nil {
-			return err
+			if next == TypeArrayEnd {
+				if err := p.ConsumeArrayEnd(); err != nil {
+					return errors.WithMessage(err, "decoding end of "+sliceType.String())
+				}
+
+				return nil
+			}
+
+			// grow slice so that the last element is available
+			sliceType.UnsafeGrow(target, idx+1)
+
+			// decode into the last element
+			el := sliceType.UnsafeGetIndex(target, idx)
+			if err := decoder(el, p); err != nil {
+				return errors.WithMessage(err, "decoding element of type "+sliceType.Elem().String())
+			}
+
+			idx++
+		}
+	}
+}
+
+func MakeArrayDecoder(arrayType reflect2.ArrayType, decoder ValueDecoder) ValueDecoder {
+	return func(target unsafe.Pointer, p *Parser) error {
+		if err := p.ConsumeArrayBegin(); err != nil {
+			return errors.WithMessage(err, "decoding "+arrayType.String())
 		}
 
-		return p.ConsumeArrayEnd()
+		var idx int
+
+		for {
+			// check the next token type
+			next, err := p.NextType()
+			if err != nil {
+				return err
+			}
+
+			if next == TypeArrayEnd {
+				if err := p.ConsumeArrayEnd(); err != nil {
+					return errors.WithMessage(err, "decoding end of "+arrayType.String())
+				}
+
+				return nil
+			}
+
+			if idx < arrayType.Len() {
+				el := arrayType.UnsafeGetIndex(target, idx)
+				if err := decoder(el, p); err != nil {
+					return errors.WithMessage(err, "decoding array element of type "+arrayType.Elem().String())
+				}
+
+			} else {
+				if err := p.Skip(); err != nil {
+					return errors.WithMessage(err, "skipping out of range array element of type "+arrayType.Elem().String())
+				}
+			}
+
+			idx++
+		}
 	}
 }
 
 type Field struct {
-	Offset  uintptr
-	Decoder ValueDecoder
+	JsonName string
+	Offset   uintptr
+	Decoder  ValueDecoder
 }
 
-func MakeStructDecoder(fields map[string]Field) ValueDecoder {
+func MakeStructDecoder(fields []Field) ValueDecoder {
+	var lookup func(name string) (Field, bool)
+
+	switch len(fields) {
+	case 1:
+		field := fields[0]
+
+		lookup = func(name string) (Field, bool) {
+			if field.JsonName == name {
+				return field, true
+			} else {
+				return Field{}, false
+			}
+		}
+	default:
+		lookupMap := make(map[string]Field, len(fields))
+		for _, field := range fields {
+			lookupMap[field.JsonName] = field
+		}
+
+		lookup = func(name string) (Field, bool) {
+			field, ok := lookupMap[name]
+			return field, ok
+		}
+	}
+
 	return func(target unsafe.Pointer, p *Parser) error {
-		tok, err := p.Read()
-		if err != nil {
+		if err := p.ConsumeObjectBegin(); err != nil {
 			return errors.WithMessage(err, "begin object")
 		}
 
-		if tok.Type == TypeNull {
-			return nil
-		}
+		for {
+			next, err := p.NextType()
+			if err != nil {
+				return err
+			}
 
-		if tok.Type == TypeObjectBegin {
-			for {
-				next, err := p.NextType()
-				if err != nil {
+			if next == TypeObjectEnd {
+				return p.ConsumeObjectEnd()
+			}
+
+			// decode the key to a string.
+			keyToken, err := p.ReadString()
+			if err != nil {
+				return err
+			}
+
+			if field, ok := lookup(byteSliceToString(keyToken.Value)); ok {
+				if err := field.Decoder(unsafe.Pointer(uintptr(target)+field.Offset), p); err != nil {
 					return err
 				}
-
-				if next == TypeObjectEnd {
-					return p.ConsumeObjectEnd()
-				}
-
-				// decode the key to a string.
-				keyToken, err := p.ReadString()
-				if err != nil {
+			} else {
+				if err := p.Skip(); err != nil {
 					return err
-				}
-
-				if field, ok := fields[byteSliceToString(keyToken.Value)]; ok {
-					if err := field.Decoder(unsafe.Pointer(uintptr(target)+field.Offset), p); err != nil {
-						return err
-					}
-				} else {
-					if err := p.Skip(); err != nil {
-						return err
-					}
 				}
 			}
 		}
-
-		return errors.Errorf("expected object, got %s", tok.Type)
 	}
 }
 

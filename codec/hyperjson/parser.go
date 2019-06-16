@@ -23,26 +23,26 @@ const (
 )
 
 type Parser struct {
-	b Buffer
+	input  io.Reader
+	buffer []byte
+	tail   int
+	head   int
+	eof    bool
 }
 
-func ForReader(r io.Reader, buf []byte) *Parser {
+func NewWithReader(r io.Reader, buf []byte) *Parser {
 	return &Parser{
-		b: Buffer{
-			input:  r,
-			buffer: buf,
-		},
+		input:  r,
+		buffer: buf,
 	}
 }
 
-func ForBytes(buf []byte) *Parser {
+func NewWithBytes(buf []byte) *Parser {
 	return &Parser{
-		b: Buffer{
-			tail:   0,
-			head:   len(buf),
-			eof:    true,
-			buffer: buf,
-		},
+		tail:   0,
+		head:   len(buf),
+		eof:    true,
+		buffer: buf,
 	}
 }
 
@@ -59,7 +59,7 @@ func (p *Parser) consumeObjectBegin() error {
 		return p.wrongTypeError(TypeObjectBegin)
 	}
 	// skip the begin object symbol
-	p.b.tail++
+	p.tail++
 	return nil
 }
 
@@ -76,7 +76,7 @@ func (p *Parser) consumeObjectEnd() error {
 		return p.wrongTypeError(TypeObjectEnd)
 	}
 	// skip the '}' symbol
-	p.b.tail++
+	p.tail++
 	return nil
 }
 
@@ -93,7 +93,7 @@ func (p *Parser) consumeArrayBegin() error {
 		return p.wrongTypeError(TypeArrayBegin)
 	}
 	// skip the begin array symbol
-	p.b.tail++
+	p.tail++
 	return nil
 }
 
@@ -110,11 +110,11 @@ func (p *Parser) consumeArrayEnd() error {
 		return p.wrongTypeError(TypeArrayEnd)
 	}
 	// skip the ']' symbol
-	p.b.tail++
+	p.tail++
 	return nil
 }
 
-func (p *Parser) Read() (Token, error) {
+func (p *Parser) ReadLiteral() (Token, error) {
 	next, err := p.NextType()
 	if err != nil {
 		return errToken, err
@@ -133,11 +133,6 @@ func (p *Parser) Read() (Token, error) {
 	case TypeNull:
 		return p.readNull()
 
-	case TypeObjectBegin:
-		buf := p.b.buffer[p.b.tail : p.b.tail+1]
-		p.b.tail += 1
-		return Token{Type: TypeObjectBegin, Value: buf}, nil
-
 	default:
 		return errToken, errors.Errorf("expected literal, got '%s'", next)
 	}
@@ -152,19 +147,18 @@ func (p *Parser) ReadString() (Token, error) {
 }
 
 func (p *Parser) readString() (Token, error) {
-	buf := &p.b
-	ch := buf.Current()
+	ch := p.current()
 	if ch != '"' {
 		return errToken, p.wrongTypeError(TypeString)
 	}
-	buf.tail++
+	p.tail++
 	var n int
 	var escapeNext bool
 	var stringHasEscaping bool
 	for {
-		avail := buf.Available()
+		avail := p.available()
 		for ; n < avail; n++ {
-			ch := buf.buffer[buf.tail+n]
+			ch := p.buffer[p.tail+n]
 
 			switch {
 			case escapeNext:
@@ -178,7 +172,7 @@ func (p *Parser) readString() (Token, error) {
 				// reached the end of the string
 				token := Token{
 					Type:  TypeString,
-					Value: buf.buffer[buf.tail : buf.tail+n],
+					Value: p.buffer[p.tail : p.tail+n],
 				}
 
 				if stringHasEscaping {
@@ -191,12 +185,12 @@ func (p *Parser) readString() (Token, error) {
 				}
 
 				// skip string and closing quote in original buffer
-				buf.tail += n + 1
+				p.tail += n + 1
 				return token, nil
 			}
 		}
 
-		if err := buf.LoadMore(); err != nil {
+		if err := p.bufferMore(); err != nil {
 			return errToken, err
 		}
 	}
@@ -211,31 +205,30 @@ func (p *Parser) ReadNumber() (Token, error) {
 }
 
 func (p *Parser) readNumber() (Token, error) {
-	buf := &p.b
-	ch := buf.Current()
+	ch := p.current()
 	if !isCharDigit(ch) {
 		return errToken, p.wrongTypeError(TypeNumber)
 	}
 
 	var n = 1
 	for {
-		avail := buf.Available()
+		avail := p.available()
 		for ; n < avail; n++ {
-			ch := buf.buffer[buf.tail+n]
+			ch := p.buffer[p.tail+n]
 
-			if !isCharDigit(ch) {
+			if !isCharDigit(ch) && ch != '.' && ch != 'e' {
 				token := Token{
 					Type:  TypeNumber,
-					Value: buf.buffer[buf.tail : buf.tail+n],
+					Value: p.buffer[p.tail : p.tail+n],
 				}
 
-				buf.tail += n
+				p.tail += n
 
 				return token, nil
 			}
 		}
 
-		if err := buf.LoadMore(); err != nil {
+		if err := p.bufferMore(); err != nil {
 			return errToken, err
 		}
 	}
@@ -250,49 +243,56 @@ func (p *Parser) NextType() (Type, error) {
 }
 
 func (p *Parser) currentType() (Type, error) {
-	tokenType := symbolTable[p.b.Current()]
+	tokenType := symbolTable[p.current()]
 
 	if tokenType == 0 {
-		return TypeError, errors.Errorf("unexpected character: '%c'", p.b.Current())
+		return TypeError, errors.Errorf("unexpected character: '%c'", p.current())
 	}
 
 	return tokenType, nil
 }
 
 func (p *Parser) mustCurrentType() Type {
-	return symbolTable[p.b.Current()]
+	return symbolTable[p.current()]
 }
 
 func (p *Parser) skipWhitespace() error {
-	b := &p.b
-
 	for {
 		// skip whitespace directly in the buffer
-		for idx := b.tail; idx < b.head; idx++ {
-			if !isCharSpace(b.buffer[idx]) {
-				b.tail = idx
+		for ; p.tail < p.head; p.tail++ {
+			if !isCharSpace(p.buffer[p.tail]) {
 				return nil
 			}
 		}
 
-		if err := b.LoadMore(); err != nil {
+		if err := p.bufferMore(); err != nil {
 			return err
 		}
 	}
 }
 
-func (p *Parser) readN(tokenType Type, first byte, n int) (Token, error) {
-	if err := p.b.require(n); err != nil {
-		return errToken, err
-	}
-
-	if ch := p.b.Current(); ch != first {
+func (p *Parser) read1(tokenType Type) (Token, error) {
+	if p.mustCurrentType() != tokenType {
 		return errToken, p.wrongTypeError(tokenType)
 	}
 
-	p.b.tail += n
+	p.tail++
 
-	return Token{Type: tokenType, Value: p.b.buffer[p.b.tail-n : p.b.tail]}, nil
+	return Token{Type: tokenType, Value: p.buffer[p.tail-1 : p.tail]}, nil
+}
+
+func (p *Parser) readN(tokenType Type, first byte, n int) (Token, error) {
+	if err := p.require(n); err != nil {
+		return errToken, err
+	}
+
+	if ch := p.current(); ch != first {
+		return errToken, p.wrongTypeError(tokenType)
+	}
+
+	p.tail += n
+
+	return Token{Type: tokenType, Value: p.buffer[p.tail-n : p.tail]}, nil
 }
 
 func (p *Parser) ReadNull() (Token, error) {
@@ -316,7 +316,7 @@ func (p *Parser) ReadBoolean() (Token, error) {
 }
 
 func (p *Parser) readBoolean() (Token, error) {
-	if p.b.Current() == 't' {
+	if p.current() == 't' {
 		return p.readN(TypeBoolean, 't', 4)
 	} else {
 		return p.readN(TypeBoolean, 'f', 5)
@@ -371,8 +371,73 @@ func isCharDigit(b byte) bool {
 func (p *Parser) wrongTypeError(expected Type) error {
 	actual, err := p.currentType()
 	if err != nil {
-		return errors.Errorf(`expected token of type '%s', but found character '%c'`, expected, p.b.Current())
+		return errors.Errorf(`expected token of type '%s', but found character '%c'`, expected, p.current())
 	}
 
 	return errors.Errorf(`expected token of type '%s', but found '%s'`, expected, actual)
+}
+
+func (p *Parser) current() byte {
+	return p.buffer[p.tail]
+}
+
+func (p *Parser) require(n int) error {
+	for p.available() < n {
+		missing := n - p.available()
+
+		free := len(p.buffer) - p.available()
+		if free < missing {
+			buf := p.buffer
+
+			// increase buffer size and copy existing data to new buffer
+			p.buffer = make([]byte, p.available()+n)
+			copy(p.buffer[:len(buf)], buf)
+		}
+
+		if err := p.bufferMore(); err != nil {
+			return errors.WithMessagef(err, "require(%d)", n)
+		}
+	}
+
+	return nil
+}
+
+// Number of bytes currently available in the buffer
+func (p *Parser) available() int {
+	return p.head - p.tail
+}
+
+// Load more data into the buffer.
+func (p *Parser) bufferMore() error {
+	if p.eof {
+		return io.EOF
+	}
+
+	if p.buffer == nil {
+		p.buffer = make([]byte, 4096)
+	}
+
+	// move existing bytes to the beginning of the buffer
+	if p.tail > 0 {
+		previousCount := p.available()
+		copy(p.buffer[:previousCount], p.buffer[p.tail:p.head])
+		p.tail = 0
+		p.head = previousCount
+	}
+
+	// read more data into the rest
+	count, err := p.input.Read(p.buffer[p.head:])
+	if err == io.EOF {
+		// stop in case of EOF
+		p.eof = true
+		if count == 0 {
+			return io.EOF
+		}
+
+	} else if err != nil {
+		return errors.WithMessage(err, "buffer more data")
+	}
+
+	p.head += count
+	return nil
 }
