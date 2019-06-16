@@ -43,13 +43,15 @@ func TestParseJsonV2(t *testing.T) {
 func BenchmarkParseJsonV2(b *testing.B) {
 	data := jsonCompact([]byte(encodedJsonV2))
 
-	var sum proxy.Id
-	for idx := 0; idx < b.N; idx++ {
-		spans, _ := ParseJsonV2(bytes.NewReader(data))
-		for _, span := range spans {
-			sum += span.Id
+	b.RunParallel(func(pb *testing.PB) {
+		var sum proxy.Id
+		for pb.Next() {
+			spans, _ := ParseJsonV2(bytes.NewReader(data))
+			for _, span := range spans {
+				sum += span.Id
+			}
 		}
-	}
+	})
 }
 
 const encodedJsonV2 = `[

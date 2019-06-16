@@ -1,112 +1,144 @@
 package cache
 
 import (
-	"container/list"
-	"sync"
 	"unsafe"
 )
 
 type lruCache struct {
-	lock sync.Mutex
-
-	maxCount int
+	maxSize int
 
 	size  int
 	count int
 
-	values map[string]lruCacheItem
-	usage  *list.List
-}
-
-type lruCacheItem struct {
-	element *list.Element
-	value   []byte
+	values map[string]*entry
+	usage  linkedList
 }
 
 const itemOverhead = int(0 +
-	unsafe.Sizeof(lruCacheItem{}) + // the item in the map
-	unsafe.Sizeof(list.Element{}) + // the element in the list
-	unsafe.Sizeof(interface{}("")) + // the iface in the element
-	unsafe.Sizeof("") + // the value in the iface in the element
-	unsafe.Sizeof("")) // the key in the map
+	unsafe.Sizeof(entry{}) + // the element in the list
+	unsafe.Sizeof(&entry{}) + // the pointer to the item in the list
+	unsafe.Sizeof("")) // the size of the string key in the map
 
-func NewLRUCache(maxCount int) *lruCache {
+func NewLRUCache(maxSize int) *lruCache {
 	return &lruCache{
-		values:   make(map[string]lruCacheItem),
-		usage:    list.New(),
-		maxCount: maxCount,
+		values:  make(map[string]*entry),
+		usage:   linkedList{},
+		maxSize: maxSize,
 	}
 }
 
-func (c *lruCache) Get(key string) []byte {
-	var result []byte
-
-	c.lock.Lock()
+func (c *lruCache) Get(key string) string {
+	var result string
 
 	item, ok := c.values[key]
 	if ok {
-		result = item.value
-		c.usage.MoveToFront(item.element)
+		result = item.Value
+		c.usage.PushHead(item)
 	}
-
-	c.lock.Unlock()
 
 	return result
 }
 
-func (c *lruCache) Set(value []byte) {
-	key := byteSliceToString(value)
-
-	c.lock.Lock()
-
+func (c *lruCache) Set(value string) {
 	// check if the element is already in the cache
-	item, ok := c.values[key]
+	item, ok := c.values[value]
 	if ok {
-		c.usage.MoveToFront(item.element)
+		c.usage.PushHead(item)
 
 	} else {
 		// remove the least recently used element
 		c.ensureCacheSize()
 
+		// create a new entry for it
+		entry := &entry{Value: value}
+
 		// and push the new value to the beginning of the cache
-		el := c.usage.PushFront(key)
-		c.values[key] = lruCacheItem{
-			element: el,
-			value:   value,
-		}
+		c.usage.PushHead(entry)
+		c.values[value] = entry
 
 		c.count++
-		c.size += len(key)
+		c.size += len(value)
 	}
-
-	c.lock.Unlock()
 }
 
 func (c *lruCache) ensureCacheSize() {
-	for c.count >= c.maxCount {
-		lru := c.usage.Back()
-		key := lru.Value.(string)
+	for c.Size() >= c.maxSize {
+		el := c.usage.DropTail()
 
-		c.usage.Remove(lru)
-		delete(c.values, key)
+		delete(c.values, el.Value)
 
 		c.count--
-		c.size -= len(key)
+		c.size -= len(el.Value)
 	}
 }
 
 func (c *lruCache) Size() int {
-	c.lock.Lock()
-	result := c.size + c.count*itemOverhead
-	c.lock.Unlock()
-
-	return result
+	return c.size + c.count*itemOverhead
 }
 
 func (c *lruCache) Count() int {
-	c.lock.Lock()
-	result := c.count
-	c.lock.Unlock()
+	return c.count
+}
 
-	return result
+type entry struct {
+	prev, next *entry
+	Value      string
+}
+
+type linkedList struct {
+	head *entry
+	tail *entry
+}
+
+func (l *linkedList) PushHead(e *entry) {
+	if l.head == e {
+		return
+	}
+
+	// remove e as the follower of the previous node
+	if e.prev != nil {
+		e.prev.next = e.next
+	}
+
+	// remove e as the predecessor of the next node
+	if e.next != nil {
+		e.next.prev = e.prev
+	}
+
+	// add e as the predecessor of the first node
+	if l.head != nil {
+		l.head.prev = e
+	}
+
+	// and set it as the new head of the list
+	l.head = e
+
+	// if the list was empty, this is also the new tail
+	if l.tail == nil {
+		l.tail = e
+	}
+}
+
+func (l *linkedList) DropTail() *entry {
+	if l.tail == nil {
+		return nil
+	}
+
+	entry := l.tail
+
+	if prev := entry.prev; prev != nil {
+		// remove entry as the successor of its predecessor
+		prev.next = nil
+
+		// and set the entries predecessor as the new tail
+		l.tail = prev
+	}
+
+	// mark list as empty if the entry is also the lists head
+	if l.head == entry {
+		l.head = nil
+		l.tail = nil
+	}
+
+	return entry
 }
