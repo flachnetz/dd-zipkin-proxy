@@ -73,7 +73,7 @@ func RegisterCacheMetrics(m metrics.Registry) {
 	metrics.NewRegisteredFunctionalGaugeFloat64("binary.cache.hit.rate", m, func() float64 {
 		hitCount := atomic.SwapUint64(&metricHitCount, 0)
 		missCount := atomic.SwapUint64(&metricMissCount, 0)
-		return 1000 * float64(hitCount) / float64(hitCount+missCount)
+		return float64(hitCount) / float64(hitCount+missCount)
 	})
 
 	metrics.NewRegisteredFunctionalGauge("binary.cache.size", m, func() int64 {
