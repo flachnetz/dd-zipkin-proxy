@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"fmt"
 	"github.com/sirupsen/logrus"
 	"unsafe"
 )
@@ -62,10 +61,6 @@ func (c *lruCache) Set(value string) {
 
 		c.count++
 		c.size += len(value)
-	}
-
-	if c.usage.Count() != c.count {
-		fmt.Println("Count")
 	}
 }
 
