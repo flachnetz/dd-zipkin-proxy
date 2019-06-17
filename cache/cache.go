@@ -43,8 +43,9 @@ func lookupCache(copyOnInsert bool, value []byte) string {
 	}
 
 	if copyOnInsert {
+		// create a copy of the data that we want to cache
 		newValue := make([]byte, 0, len(value))
-		value = append(newValue, value...)
+		key = byteSliceToString(append(newValue, value...))
 	}
 
 	atomic.AddUint64(&metricMissCount, 1)
