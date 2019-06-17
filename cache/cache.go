@@ -9,7 +9,7 @@ import (
 )
 
 var binaryCacheLock sync.Mutex
-var binaryCache = NewLRUCache(512)
+var binaryCache = NewLRUCache(5 * 1024 * 1024)
 
 var metricMissCount, metricHitCount uint64
 
