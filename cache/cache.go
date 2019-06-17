@@ -9,10 +9,9 @@ import (
 )
 
 var binaryCacheLock sync.Mutex
-var binaryCache = NewLRUCache(4 * 1024 * 1024)
+var binaryCache = NewLRUCache(512)
 
 var metricMissCount, metricHitCount uint64
-var metricReadBinarySize = metrics.NewHistogram(metrics.NewUniformSample(1024 * 8))
 
 func String(str string) string {
 	return lookupCache(false, stringToByteSlice(str))
@@ -84,7 +83,7 @@ func RegisterCacheMetrics(m metrics.Registry) {
 
 	metrics.NewRegisteredFunctionalGauge("binary.cache.count", m, func() int64 {
 		binaryCacheLock.Lock()
-		binaryCacheLock.Unlock()
+		defer binaryCacheLock.Unlock()
 		return int64(binaryCache.Count())
 	})
 }

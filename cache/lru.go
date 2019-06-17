@@ -1,8 +1,12 @@
 package cache
 
 import (
+	"fmt"
+	"github.com/sirupsen/logrus"
 	"unsafe"
 )
+
+var log = logrus.WithField("prefix", "cache")
 
 type lruCache struct {
 	maxSize int
@@ -59,11 +63,19 @@ func (c *lruCache) Set(value string) {
 		c.count++
 		c.size += len(value)
 	}
+
+	if c.usage.Count() != c.count {
+		fmt.Println("Count")
+	}
 }
 
 func (c *lruCache) ensureCacheSize() {
 	for c.Size() >= c.maxSize {
 		el := c.usage.DropTail()
+		if el == nil {
+			log.Warnf("could not drop tail from list")
+			continue
+		}
 
 		delete(c.values, el.Value)
 
@@ -95,6 +107,11 @@ func (l *linkedList) PushHead(e *entry) {
 		return
 	}
 
+	//
+	if l.tail == e {
+		l.tail = e.prev
+	}
+
 	// remove e as the follower of the previous node
 	if e.prev != nil {
 		e.prev.next = e.next
@@ -111,6 +128,8 @@ func (l *linkedList) PushHead(e *entry) {
 	}
 
 	// and set it as the new head of the list
+	e.prev = nil
+	e.next = l.head
 	l.head = e
 
 	// if the list was empty, this is also the new tail
@@ -141,4 +160,16 @@ func (l *linkedList) DropTail() *entry {
 	}
 
 	return entry
+}
+
+func (l *linkedList) Count() int {
+	node := l.head
+
+	var count int
+	for node != nil {
+		count++
+		node = node.next
+	}
+
+	return count
 }

@@ -51,8 +51,6 @@ func (p *CachingProtocol) ReadBinary() ([]byte, error) {
 		return nil, invalidDataLength
 	}
 
-	metricReadBinarySize.Update(int64(size))
-
 	// we can try to read the data into our scratch space if possible
 	var err error
 	var buf []byte
