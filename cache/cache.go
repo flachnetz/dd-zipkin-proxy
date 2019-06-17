@@ -9,7 +9,7 @@ import (
 )
 
 var binaryCacheLock sync.Mutex
-var binaryCache = NewLRUCache(10 * 1024 * 1024)
+var binaryCache = NewLRUCache(4 * 1024 * 1024)
 
 var metricMissCount, metricHitCount uint64
 var metricReadBinarySize = metrics.NewHistogram(metrics.NewUniformSample(1024 * 8))
