@@ -133,7 +133,7 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 
 		log.Debugf("Ensure that topic %s exists", opts.Kafka.Topic)
 		topic := kafka.Topic{
-			Name: opts.Kafka.Topic, NumPartitions: 10, ReplicationFactor: 1,
+			Name: opts.Kafka.Topic, NumPartitions: 12, ReplicationFactor: 1,
 			Config: map[string]*string{
 				"retention.ms":    toStringPtr(strconv.Itoa(int(10 * time.Minute / time.Millisecond))),
 				"retention.bytes": toStringPtr(strconv.Itoa(64 * 1024 * 1024)),
