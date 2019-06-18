@@ -10,27 +10,6 @@ import (
 	"time"
 )
 
-func encodeInt(w *bytes.Buffer, byteCount int, encoded uint64) error {
-	w.Grow(byteCount)
-
-	if encoded == 0 {
-		return w.WriteByte(0)
-	} else {
-		for encoded > 0 {
-			b := byte(encoded & 127)
-			encoded = encoded >> 7
-			if !(encoded == 0) {
-				b |= 128
-			}
-			if err := w.WriteByte(b); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
 func readLong(r *bytes.Reader) (int64, error) {
 	var v uint64
 	for shift := uint(0); ; shift += 7 {
@@ -195,8 +174,30 @@ func readString(r *bytes.Reader) (string, error) {
 func writeLong(r int64, w *bytes.Buffer) error {
 	downShift := uint64(63)
 	encoded := uint64((r << 1) ^ (r >> downShift))
-	const maxByteSize = 10
-	return encodeInt(w, maxByteSize, encoded)
+	return encodeInt(w, encoded)
+}
+
+func encodeInt(w *bytes.Buffer, encoded uint64) error {
+	// max byte size for a 64 bit integer in zig-zag encoding
+	w.Grow(10)
+
+	if encoded == 0 {
+		return w.WriteByte(0)
+	} else {
+		for encoded > 0 {
+			b := byte(encoded & 127)
+			encoded = encoded >> 7
+			if encoded != 0 {
+				b |= 128
+			}
+
+			if err := w.WriteByte(b); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func writeMapString(r map[string]string, w *bytes.Buffer) error {

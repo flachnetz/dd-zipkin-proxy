@@ -1,13 +1,13 @@
 package balance
 
 import (
-	"bytes"
-	"encoding/binary"
 	"github.com/Shopify/sarama"
-	"github.com/flachnetz/dd-zipkin-proxy/codec"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 	"github.com/pkg/errors"
+	"github.com/rcrowley/go-metrics"
 )
+
+var metricKafkaSpanSize = metrics.NewRegisteredHistogram("kafka.span.size", nil, metrics.NewUniformSample(1024))
 
 type Sender struct {
 	producer sarama.AsyncProducer
@@ -30,18 +30,5 @@ func (s *Sender) Send(spans <-chan proxy.Span) {
 }
 
 func (s *Sender) sendSpan(span proxy.Span) {
-	var buf bytes.Buffer
-	_ = codec.BinaryEncode(span, &buf)
-
-	s.producer.Input() <- &sarama.ProducerMessage{
-		Key:   keyOf(span.Trace),
-		Value: sarama.ByteEncoder(buf.Bytes()),
-		Topic: s.topic,
-	}
-}
-
-func keyOf(traceId proxy.Id) sarama.Encoder {
-	var buffer [8]byte
-	binary.LittleEndian.PutUint64(buffer[:], traceId.Uint64())
-	return sarama.ByteEncoder(buffer[:])
+	s.producer.Input() <- makeProducerMessage(span, s.topic)
 }
