@@ -88,7 +88,7 @@ func Sink(transport tracer.Transport, spans <-chan proxy.Span) {
 			}
 
 			// get a buffer of spans
-			if len(spans) < 1 {
+			if len(ddSpans) < 1 {
 				ddSpans = make([]tracer.Span, 4*1024)
 			}
 
