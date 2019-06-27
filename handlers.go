@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rcrowley/go-metrics"
 	"io"
+	"math/rand"
 	"net/http"
 	"strings"
 )
@@ -23,6 +24,11 @@ func handleSpans(r *httprouter.Router, spans chan<- proxy.Span) {
 			metrics.GetOrRegisterTimer("spans.receive[type:thrift]", nil).Time(func() {
 				err = parseSpansWithThrift(spans, req.Body)
 			})
+		}
+
+		if rand.Float64() < 0.01 {
+			// dont do keep the connection alive in 1% of the cases
+			writer.Header().Set("Connection", "close")
 		}
 
 		if err != nil {

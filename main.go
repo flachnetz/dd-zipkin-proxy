@@ -139,6 +139,7 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 				"retention.bytes": toStringPtr(strconv.Itoa(64 * 1024 * 1024)),
 				"segment.bytes":   toStringPtr(strconv.Itoa(4 * 1024 * 1024)),
 			}}
+
 		err := kafka.EnsureTopics(client, kafka.Topics{topic})
 		FatalOnError(err, "Ensure that the topic exists failed")
 
