@@ -45,12 +45,6 @@ type none struct{}
 type tree struct {
 	traceId Id
 
-	// parent-id to span
-	// byParent map[Id][]proxy.Span
-
-	// child-id to parent-id
-	// byChild map[Id]Id
-
 	// spans not yet belonging to any parent
 	spans SpanSlice
 
@@ -78,7 +72,7 @@ func (tree *tree) AddSpan(newSpan proxy.Span) {
 	// get a reference to the span if it already exists
 	span := tree.spans.GetSpanRef(newSpan.Id)
 	if span == nil {
-		tree.spans = tree.spans.Append(newSpan)
+		tree.spans.Append(newSpan)
 		tree.nodeCount++
 		return
 	}
@@ -530,16 +524,14 @@ func (spans SpanSlice) GetSpanRef(spanId Id) *proxy.Span {
 	return nil
 }
 
-func (spans SpanSlice) Append(span proxy.Span) []proxy.Span {
-	idx := sort.Search(len(spans), func(i int) bool {
-		return span.Id >= spans[i].Id
+func (spans *SpanSlice) Append(span proxy.Span) {
+	idx := sort.Search(len(*spans), func(i int) bool {
+		return span.Id >= (*spans)[i].Id
 	})
 
-	spans = append(spans, proxy.Span{})
-	copy(spans[idx+1:], spans[idx:])
-	spans[idx] = span
-
-	return spans
+	*spans = append(*spans, proxy.Span{})
+	copy((*spans)[idx+1:], (*spans)[idx:])
+	(*spans)[idx] = span
 }
 
 func (spans SpanSlice) HasSpan(id proxy.Id) bool {

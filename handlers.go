@@ -50,6 +50,19 @@ func handleSpans(r *httprouter.Router, spans chan<- proxy.Span) {
 			writer.WriteHeader(http.StatusAccepted)
 		}
 	})
+
+	r.POST("/api/jaeger/spans", func(writer http.ResponseWriter, req *http.Request, params httprouter.Params) {
+		var err error
+		metrics.GetOrRegisterTimer("spans.receive[type:jaeger]", nil).Time(func() {
+			err = parseSpansWithJSON(spans, req.Body, codec.ParseJaeger)
+		})
+
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+		} else {
+			writer.WriteHeader(http.StatusAccepted)
+		}
+	})
 }
 
 func handleGzipRequestBody(handle http.Handler) http.HandlerFunc {

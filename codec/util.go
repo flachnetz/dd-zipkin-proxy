@@ -8,5 +8,6 @@ type Id = proxy.Id
 
 var tagJsonV1 = "json v1"
 var tagJsonV2 = "json v2"
+var tagJaeger = "jaeger"
 var tagThriftV1 = "thrift v1"
 var tagProtocolVersion = "protocolVersion"
