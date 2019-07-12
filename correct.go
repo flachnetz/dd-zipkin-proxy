@@ -45,7 +45,6 @@ type none struct{}
 type tree struct {
 	traceId Id
 
-	// spans not yet belonging to any parent
 	spans SpanSlice
 
 	started   time.Time
@@ -395,7 +394,7 @@ func discardSuspiciousTraces(trees map[Id]*tree, maxSpans int) {
 
 func correctTreeTimings(tree *tree, node *proxy.Span, offset time.Duration) {
 	if offset != 0 {
-		node.Timestamp.AddInPlace(offset)
+		node.Timestamp += proxy.Timestamp(offset)
 	}
 
 	clientSent := node.Timings.CS
@@ -415,10 +414,10 @@ func correctTreeTimings(tree *tree, node *proxy.Span, offset time.Duration) {
 
 	if clientRecv != 0 && clientSent != 0 && serverRecv != 0 && serverSent != 0 {
 		// offset all timings
-		clientSent.AddInPlace(offset)
-		clientRecv.AddInPlace(offset)
-		serverSent.AddInPlace(offset)
-		serverRecv.AddInPlace(offset)
+		clientSent += proxy.Timestamp(offset)
+		clientRecv += proxy.Timestamp(offset)
+		serverSent += proxy.Timestamp(offset)
+		serverRecv += proxy.Timestamp(offset)
 
 		// screw in milliseconds
 		screw := time.Duration((clientRecv+clientSent)/2 - (serverRecv+serverSent)/2)
@@ -440,7 +439,7 @@ func correctTreeTimings(tree *tree, node *proxy.Span, offset time.Duration) {
 	} else if clientSent != 0 && serverRecv != 0 {
 		// we only know the timestamps of server + client
 		offset += time.Duration(clientSent - serverRecv)
-		node.Timestamp = clientSent
+		node.Timestamp = clientSent + proxy.Timestamp(offset)
 	}
 
 	children := tree.ChildrenOf(node.Id)

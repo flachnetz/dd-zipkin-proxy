@@ -33,10 +33,6 @@ func (ts Timestamp) IsValid() bool {
 	return ts > 0
 }
 
-func (ts *Timestamp) AddInPlace(duration time.Duration) {
-	*ts += Timestamp(duration)
-}
-
 func (ts Timestamp) MarshalJSON() ([]byte, error) {
 	return ts.ToTime().MarshalJSON()
 }
