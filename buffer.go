@@ -16,11 +16,15 @@ func NewSpansBuffer(capacity uint) *SpansBuffer {
 	return &SpansBuffer{spans: spans}
 }
 
-func (buffer *SpansBuffer) ReadFrom(spans <-chan proxy.Span) {
-	for span := range spans {
+func (buffer *SpansBuffer) ReadFrom(tracesCh <-chan proxy.Trace) {
+	for trace := range tracesCh {
 		buffer.lock.Lock()
-		buffer.spans[buffer.position] = span
-		buffer.position = (buffer.position + 1) % uint(len(buffer.spans))
+
+		for _, span := range trace {
+			buffer.spans[buffer.position] = span
+			buffer.position = (buffer.position + 1) % uint(len(buffer.spans))
+		}
+
 		buffer.lock.Unlock()
 	}
 }

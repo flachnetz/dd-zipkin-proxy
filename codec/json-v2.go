@@ -101,25 +101,9 @@ func idValueDecoder(target unsafe.Pointer, p *hyperjson.Parser) error {
 		return errors.WithMessage(err, "decode id value")
 	}
 
-	if len(tok.Value) > 16 {
-		return errors.New("hex value too large")
-	}
-
-	var result proxy.Id
-	for _, c := range tok.Value {
-		switch {
-		case '0' <= c && c <= '9':
-			result = (result << 4) | proxy.Id(c-'0')
-
-		case 'a' <= c && c <= 'f':
-			result = (result << 4) | proxy.Id(c-'a') + 10
-
-		case 'A' <= c && c <= 'F':
-			result = (result << 4) | proxy.Id(c-'A') + 10
-
-		default:
-			return errors.Errorf("hex value must only contain [0-9a-f], got '%c'", c)
-		}
+	result, err := proxy.ParseId(tok.Value)
+	if err != nil {
+		return err
 	}
 
 	*(*Id)(target) = result

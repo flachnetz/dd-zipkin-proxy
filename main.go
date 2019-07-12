@@ -19,10 +19,8 @@ import (
 	"github.com/rcrowley/go-metrics"
 	"github.com/sirupsen/logrus"
 	"net/http"
-	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	_ "github.com/apache/thrift/lib/go/thrift"
@@ -81,34 +79,34 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 		defer profile.Start().Stop()
 	}
 
-	var channels []chan<- proxy.Span
+	var channels []chan<- proxy.Trace
 
 	if true {
 		log.Info("Enable forwarding of spans to datadog trace-agent")
 		transport := datadog.DefaultTransport(opts.TraceAgent.Host, strconv.Itoa(opts.TraceAgent.Port))
 
-		// accept zipkin spans
-		spans := make(chan proxy.Span, 256)
-		channels = append(channels, spans)
+		// accept zipkin traces
+		traces := make(chan proxy.Trace, 256)
+		channels = append(channels, traces)
 
-		go datadog.Sink(transport, spans)
+		go datadog.Sink(transport, traces)
 	}
 
 	if false {
 		log.Info("Enable forwarding to a zipkin agent")
 
-		// accept zipkin spans
-		spans := make(chan proxy.Span, 256)
-		channels = append(channels, spans)
+		// accept zipkin trace
+		trace := make(chan proxy.Trace, 256)
+		channels = append(channels, trace)
 
-		go zipkin.Sink(spans)
+		go zipkin.Sink(trace)
 
 	}
 
 	// a channel to store the last spans that were received
 	var buffer *SpansBuffer
 	{
-		spans := make(chan proxy.Span, 256)
+		spans := make(chan proxy.Trace, 256)
 		channels = append(channels, spans)
 
 		// just keep references to previous spans.
@@ -117,7 +115,7 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 	}
 
 	// multiplex input channel to all the target channels
-	processedSpans := make(chan proxy.Span, 64)
+	processedSpans := make(chan proxy.Trace, 64)
 	go forwardSpansToChannels(processedSpans, channels, spanConverter)
 
 	// http handler will put spans into this channel
@@ -194,35 +192,27 @@ func toStringPtr(stringValue string) *string {
 	return &stringValue
 }
 
-func forwardSpansToChannels(source <-chan proxy.Span, targets []chan<- proxy.Span, converter SpanConverter) {
-	processSpan := func(span proxy.Span) {
-		converted, err := converter(span)
-		if err != nil || converted.Id == 0 || converted.Trace == 0 {
-			return
+func forwardSpansToChannels(source <-chan proxy.Trace, targets []chan<- proxy.Trace, converter SpanConverter) {
+	processTrace := func(trace proxy.Trace) {
+		// we re-use the same slice for the target and just overwrite
+		// the spans in there.
+		var result = trace[:0]
+
+		for idx := range trace {
+			converted, err := converter(trace[idx])
+			if err != nil || converted.Id == 0 || converted.Trace == 0 {
+				continue
+			}
+
+			result = append(result, converted)
 		}
 
 		for _, target := range targets {
-			target <- converted
+			target <- result
 		}
 	}
 
-	// limit concurrency by number of cpus
-	concurrency := runtime.NumCPU() - 2
-	if concurrency < 2 {
-		concurrency = 2
+	for trace := range source {
+		processTrace(trace)
 	}
-
-	// start processSpan routines
-	var wg sync.WaitGroup
-	for idx := 0; idx < concurrency; idx++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for span := range source {
-				processSpan(span)
-			}
-		}()
-	}
-
-	wg.Wait()
 }

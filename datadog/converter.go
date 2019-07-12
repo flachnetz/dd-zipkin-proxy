@@ -48,17 +48,17 @@ func submitTraces(transport tracer.Transport, spansByTrace <-chan map[uint64][]*
 	}
 }
 
-func Sink(transport tracer.Transport, spans <-chan proxy.Span) {
+func Sink(transport tracer.Transport, tracesCh <-chan proxy.Trace) {
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
 
-	count := 0
+	spanCount := 0
 	byTrace := make(map[uint64][]*tracer.Span)
 
 	groupedSpans := make(chan map[uint64][]*tracer.Span, 8)
 	defer close(groupedSpans)
 
-	// send the spans in background
+	// send the traces in background
 	go submitTraces(transport, groupedSpans)
 
 	var ddSpans []tracer.Span
@@ -69,61 +69,65 @@ func Sink(transport tracer.Transport, spans <-chan proxy.Span) {
 		var flush bool
 
 		select {
-		case span, ok := <-spans:
+		case trace, ok := <-tracesCh:
 			if !ok {
 				log.Info("Channel closed, stopping sender")
 				return
 			}
 
-			// set lower bound on time
-			duration := span.Duration
-			if duration < 1*time.Microsecond {
-				duration = 1 * time.Microsecond
+			for _, span := range trace {
+				// set lower bound on time
+				duration := span.Duration
+				if duration < 1*time.Microsecond {
+					duration = 1 * time.Microsecond
+				}
+
+				// use fallback if name is empty
+				resource := span.Name
+				if resource == "" {
+					resource = "(resource empty)"
+				}
+
+				// get a buffer of spans
+				if len(ddSpans) < 1 {
+					ddSpans = make([]tracer.Span, 4*1024)
+				}
+
+				// get a pointer to a free span
+				converted := &ddSpans[0]
+				ddSpans = ddSpans[1:]
+
+				*converted = tracer.Span{
+					Resource: resource,
+
+					// use span.Service as the datadog Service and Name
+					Name:    span.Service,
+					Service: span.Service,
+
+					Start:    span.Timestamp.ToTime().UnixNano(),
+					Duration: duration.Nanoseconds(),
+
+					SpanID:   span.Id.Uint64(),
+					TraceID:  span.Trace.Uint64(),
+					ParentID: span.Parent.Uint64(),
+
+					Meta:    span.Tags,
+					Sampled: true,
+				}
+
+				byTrace[converted.TraceID] = append(byTrace[converted.TraceID], converted)
 			}
 
-			// use fallback if name is empty
-			resource := span.Name
-			if resource == "" {
-				resource = "(resource empty)"
-			}
+			spanCount += len(trace)
 
-			// get a buffer of spans
-			if len(ddSpans) < 1 {
-				ddSpans = make([]tracer.Span, 4*1024)
-			}
-
-			// get a pointer to a free span
-			converted := &ddSpans[0]
-			ddSpans = ddSpans[1:]
-
-			*converted = tracer.Span{
-				Resource: resource,
-
-				// use span.Service as the datadog Service and Name
-				Name:    span.Service,
-				Service: span.Service,
-
-				Start:    span.Timestamp.ToTime().UnixNano(),
-				Duration: duration.Nanoseconds(),
-
-				SpanID:   span.Id.Uint64(),
-				TraceID:  span.Trace.Uint64(),
-				ParentID: span.Parent.Uint64(),
-
-				Meta:    span.Tags,
-				Sampled: true,
-			}
-
-			count++
-			byTrace[converted.TraceID] = append(byTrace[converted.TraceID], converted)
-			flush = count >= flushSpanCount
+			flush = spanCount >= flushSpanCount
 
 		case <-ticker.C:
 			// only flush if we didn't automatically flush shortly before
 			flush = time.Since(lastFlushTime) >= 90*flushInterval/100
 		}
 
-		if flush && count > 0 {
+		if flush && spanCount > 0 {
 			select {
 			case groupedSpans <- byTrace:
 			default:
@@ -131,7 +135,7 @@ func Sink(transport tracer.Transport, spans <-chan proxy.Span) {
 			}
 
 			// reset collection
-			count = 0
+			spanCount = 0
 			byTrace = make(map[uint64][]*tracer.Span)
 			lastFlushTime = time.Now()
 		}

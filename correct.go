@@ -61,8 +61,8 @@ func newTree(traceId Id) *tree {
 	}
 }
 
-func (tree *tree) Spans() []proxy.Span {
-	return tree.spans
+func (tree *tree) Spans() proxy.Trace {
+	return proxy.Trace(tree.spans)
 }
 
 func (tree *tree) AddSpan(newSpan proxy.Span) {
@@ -142,7 +142,7 @@ func (tree *tree) Roots() []*proxy.Span {
 	return candidates
 }
 
-func ErrorCorrectSpans(inputCh <-chan proxy.Span, outputCh chan<- proxy.Span) {
+func ErrorCorrectSpans(inputCh <-chan proxy.Span, outputCh chan<- proxy.Trace) {
 	traces := make(map[Id]*tree)
 
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -184,7 +184,7 @@ func ErrorCorrectSpans(inputCh <-chan proxy.Span, outputCh chan<- proxy.Span) {
 	}
 }
 
-func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- proxy.Span) {
+func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- proxy.Trace) {
 	var spanCount int64
 
 	deadlineUpdate := time.Now().Add(-bufferTime)
@@ -215,7 +215,7 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- pr
 
 		if traceTooOld {
 			blacklist[traceID] = none{}
-			log.Warnf("Trace %x with %d nodes is too old", traceID, trace.nodeCount)
+			log.Warnf("Trace %s with %d nodes is too old", traceID, trace.nodeCount)
 			debugPrintTrace(trace)
 
 			metricsTracesTooOld.Mark(1)
@@ -247,9 +247,7 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- pr
 		metricsTracesCorrected.Mark(1)
 
 		// send all the spans to the output channel
-		for _, span := range trace.Spans() {
-			outputCh <- span
-		}
+		outputCh <- trace.Spans()
 
 		metricsTracesFinished.Mark(1)
 	}
@@ -509,7 +507,7 @@ func mergeSpansInPlace(spanToUpdate *proxy.Span, newSpan proxy.Span) {
 	metricsSpansMerged.Mark(1)
 }
 
-type SpanSlice []proxy.Span
+type SpanSlice proxy.Trace
 
 func (spans SpanSlice) GetSpanRef(spanId Id) *proxy.Span {
 	idx := sort.Search(len(spans), func(i int) bool {
