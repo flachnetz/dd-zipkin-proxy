@@ -81,9 +81,10 @@ func TestCorrectTimings(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		indices := rand.Perm(4)
-		baseOffset := time.Duration(rand.Int31n(100000))
+		baseOffset := proxy.Timestamp(rand.Int31n(100000))
 
-		client, sharedClient, sharedServer, server := threeSpans(100, 200, 1110, 1190)
+		scale := proxy.Timestamp(1 * time.Millisecond)
+		client, sharedClient, sharedServer, server := threeSpans(100*scale, 200*scale, 1110*scale, 1190*scale)
 
 		tree := newTree(client.Trace)
 
@@ -100,20 +101,22 @@ func TestCorrectTimings(t *testing.T) {
 		logrus.SetLevel(logrus.DebugLevel)
 		debugPrintTrace(tree)
 
-		correctTreeTimings(tree, tree.Root(), baseOffset)
+		correctTreeTimings(tree, tree.Root(), time.Duration(baseOffset))
 
 		clientSpan := tree.GetSpan(client.Id)
-		Expect(clientSpan.Timestamp).To(BeEquivalentTo(proxy.Timestamp(baseOffset + 100)))
+		Expect(clientSpan.Timestamp).To(BeEquivalentTo(proxy.Timestamp(baseOffset + 100*scale)))
 
 		serverSpan := tree.GetSpan(server.Id)
-		Expect(serverSpan.Timestamp).To(BeEquivalentTo(proxy.Timestamp(baseOffset + 110)))
+		Expect(serverSpan.Timestamp).To(BeEquivalentTo(proxy.Timestamp(baseOffset + 110*scale)))
 
 		shared := tree.GetSpan(sharedClient.Id)
-		Expect(shared.Timestamp).To(BeEquivalentTo(proxy.Timestamp(baseOffset + 100)))
+		Expect(shared.Timestamp).To(BeEquivalentTo(proxy.Timestamp(baseOffset + 100*scale)))
 	}
 }
 
 func threeSpans(cs, cr, sr, ss proxy.Timestamp) (proxy.Span, proxy.Span, proxy.Span, proxy.Span) {
+	offset := proxy.Timestamp(100 * time.Millisecond)
+
 	client := proxy.Span{Id: 1, Trace: 1, Parent: 1, Timestamp: cs, Duration: time.Duration(cr - cs)}
 	client.AddTiming("cs", cs)
 	client.AddTiming("cr", cr)
@@ -122,13 +125,13 @@ func threeSpans(cs, cr, sr, ss proxy.Timestamp) (proxy.Span, proxy.Span, proxy.S
 	sharedClient.AddTiming("cs", cs)
 	sharedClient.AddTiming("cr", cr)
 
-	sharedServer := proxy.Span{Id: 2, Trace: 1, Parent: client.Id, Timestamp: sr, Duration: time.Duration(ss - sr)}
-	sharedServer.AddTiming("sr", sr)
-	sharedServer.AddTiming("ss", ss)
+	sharedServer := proxy.Span{Id: 2, Trace: 1, Parent: client.Id, Timestamp: sr + offset, Duration: time.Duration(ss - sr)}
+	sharedServer.AddTiming("sr", sr+offset)
+	sharedServer.AddTiming("ss", ss+offset)
 
-	server := proxy.Span{Id: 3, Trace: 1, Parent: sharedServer.Id, Timestamp: sr, Duration: time.Duration(ss - sr)}
-	server.AddTiming("sr", sr)
-	server.AddTiming("ss", ss)
+	server := proxy.Span{Id: 3, Trace: 1, Parent: sharedServer.Id, Timestamp: sr + offset, Duration: time.Duration(ss - sr)}
+	server.AddTiming("sr", sr+offset)
+	server.AddTiming("ss", ss+offset)
 
 	return client, sharedClient, sharedServer, server
 }

@@ -206,7 +206,7 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- pr
 
 		if traceTooLarge {
 			blacklist[traceID] = none{}
-			log.Warnf("Trace %x with %d nodes is too large.", traceID, trace.nodeCount)
+			log.Warnf("Trace %s with %d nodes is too large.", traceID, trace.nodeCount)
 			debugPrintTrace(trace)
 
 			metricsTracesTooLarge.Mark(1)
@@ -235,7 +235,7 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- pr
 
 		if len(roots) != 1 {
 			// we don't have a root, what now?
-			log.Debugf("No unique root for trace %x with %d spans", traceID, trace.nodeCount)
+			log.Debugf("No unique root for trace %s with %d spans", traceID, trace.nodeCount)
 			debugPrintTrace(trace)
 
 			metricsTracesWithoutRoot.Mark(1)
@@ -325,7 +325,7 @@ func debugPrintTrace(trace *tree) {
 	printNode = func(node *proxy.Span, level int) {
 		space := strings.Repeat("  ", level)
 
-		log.Warnf("%s%s [%x] (%s, %s, parent=%x)", space, node.Name, node.Id,
+		log.Warnf("%s%s [%s] (%s, %s, parent=%s)", space, node.Name, node.Id,
 			node.Timestamp.ToTime(), node.Duration, node.Parent)
 
 		children := trace.ChildrenOf(node.Id)
@@ -345,7 +345,7 @@ func debugPrintTrace(trace *tree) {
 	}
 
 	for idx, root := range roots {
-		log.Warnf("Trace %x, root #%d", roots[0].Trace, idx)
+		log.Warnf("Trace %s, root #%d", roots[0].Trace, idx)
 		printNode(root, 0)
 	}
 
@@ -411,38 +411,28 @@ func correctTreeTimings(tree *tree, node *proxy.Span, offset time.Duration) {
 	//           |_sr_______|__________| ss
 
 	if clientRecv != 0 && clientSent != 0 && serverRecv != 0 && serverSent != 0 {
-		// offset all timings
-		clientSent += proxy.Timestamp(offset)
-		clientRecv += proxy.Timestamp(offset)
-		serverSent += proxy.Timestamp(offset)
-		serverRecv += proxy.Timestamp(offset)
-
-		// screw in milliseconds
+		// This is the time difference between client & server as described above
 		screw := time.Duration((clientRecv+clientSent)/2 - (serverRecv+serverSent)/2)
 
-		if screw < -25*time.Millisecond || screw > 25*time.Millisecond {
-			log.Debugf("Found time screw of %s for span '%s'", screw, node.Name)
+		if log.Level >= logrus.DebugLevel {
+			if screw < -25*time.Millisecond || screw > 25*time.Millisecond {
+				log.Debugf("Found time screw of %s for span '%s'", screw, node.Name)
+			}
 		}
 
-		// offset for child spans
-		offset += screw
-
-		// calculate the offset for children based on the fact, that
-		// sr must occur after cs and ss must occur before cr.
-		node.Timestamp = clientSent
+		// assume that the spans starts at 'clientSent' and offset it by the
+		// parents time offset.
+		node.Timestamp = clientSent + proxy.Timestamp(offset)
 
 		// update the duration using the client info.
 		node.Duration = time.Duration(clientRecv - clientSent)
 
-	} else if clientSent != 0 && serverRecv != 0 {
-		// we only know the timestamps of server + client
-		offset += time.Duration(clientSent - serverRecv)
-		node.Timestamp = clientSent + proxy.Timestamp(offset)
+		// update offset for child spans
+		offset += screw
 	}
 
-	children := tree.ChildrenOf(node.Id)
-	for idx := range children {
-		correctTreeTimings(tree, children[idx], offset)
+	for _, child := range tree.ChildrenOf(node.Id) {
+		correctTreeTimings(tree, child, offset)
 	}
 }
 

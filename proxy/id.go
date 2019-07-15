@@ -61,8 +61,8 @@ func (id Id) String() string {
 		byte(id & 0xff),
 	}
 
-	var encoded [18]byte
-	hex.Encode(encoded[1:], bytes[:])
+	var encoded [16]byte
+	hex.Encode(encoded[:], bytes[:])
 
 	return string(encoded[:])
 }
