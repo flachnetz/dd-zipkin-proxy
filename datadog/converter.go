@@ -97,6 +97,13 @@ func Sink(transport tracer.Transport, tracesCh <-chan proxy.Trace) {
 				converted := &ddSpans[0]
 				ddSpans = ddSpans[1:]
 
+				var isError int32 = 0
+				if spanError, ok := span.Tags["error"]; ok {
+					if spanError == "true" || spanError == "1" {
+						isError = 1
+					}
+				}
+
 				*converted = tracer.Span{
 					Resource: resource,
 
@@ -113,6 +120,7 @@ func Sink(transport tracer.Transport, tracesCh <-chan proxy.Trace) {
 
 					Meta:    span.Tags,
 					Sampled: true,
+					Error:   isError,
 				}
 
 				byTrace[converted.TraceID] = append(byTrace[converted.TraceID], converted)

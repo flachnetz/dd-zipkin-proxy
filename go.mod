@@ -1,5 +1,7 @@
 module github.com/flachnetz/dd-zipkin-proxy
 
+go 1.14
+
 require (
 	github.com/DataDog/dd-trace-go v0.6.1
 	github.com/Shopify/sarama v1.22.1
