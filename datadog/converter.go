@@ -99,7 +99,7 @@ func Sink(transport tracer.Transport, tracesCh <-chan proxy.Trace) {
 
 				var isError int32 = 0
 				if spanError, ok := span.Tags["error"]; ok {
-					if spanError == "true" || spanError == "1" {
+					if spanError != "false" && spanError != "0" {
 						isError = 1
 					}
 				}
