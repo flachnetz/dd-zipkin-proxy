@@ -11,27 +11,31 @@ import (
 
 type Id = proxy.Id
 
-const bufferTime = 10 * time.Second
-const maxSpans = 75000
+const bufferTime = 8 * time.Second
+const maxSpans = 100_000
 
-var metricsSpansMerged metrics.Meter
 var metricsTracesFinished metrics.Meter
 var metricsTracesFinishedSize metrics.Histogram
 var metricsTracesWithoutRoot metrics.Meter
 var metricsTracesTooLarge metrics.Meter
 var metricsTracesTooOld metrics.Meter
 var metricsTracesInflight metrics.Gauge
-var metricsSpansInflight metrics.Gauge
 var metricsTracesCorrected metrics.Meter
+var metricsTracesDiscarded metrics.Meter
+var metricsSpansMerged metrics.Meter
+var metricsSpansDiscarded metrics.Meter
+var metricsSpansInflight metrics.Gauge
 var metricsReceivedBlacklistedSpan metrics.Meter
 
 func init() {
 	metricsSpansMerged = metrics.GetOrRegisterMeter("spans.merged", nil)
+	metricsSpansDiscarded = metrics.GetOrRegisterMeter("spans.discarded", nil)
 	metricsTracesCorrected = metrics.GetOrRegisterMeter("traces.corrected", nil)
 	metricsTracesFinished = metrics.GetOrRegisterMeter("traces.finished", nil)
 	metricsTracesWithoutRoot = metrics.GetOrRegisterMeter("traces.noroot", nil)
 	metricsTracesTooLarge = metrics.GetOrRegisterMeter("traces.toolarge", nil)
 	metricsTracesTooOld = metrics.GetOrRegisterMeter("traces.tooold", nil)
+	metricsTracesDiscarded = metrics.GetOrRegisterMeter("traces.discarded", nil)
 	metricsTracesInflight = metrics.GetOrRegisterGauge("traces.partial.count", nil)
 	metricsSpansInflight = metrics.GetOrRegisterGauge("traces.partial.span.count", nil)
 	metricsReceivedBlacklistedSpan = metrics.GetOrRegisterMeter("blacklist.span.received", nil)
@@ -258,7 +262,7 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- pr
 
 	// remove largest traces if we have too many in-flight spans
 	if spanCount > maxSpans {
-		log.Warnf("There are currently %d in-flight spans, cleaning suspicious traces now", spanCount)
+		log.Warnf("There are currently %d in-flight spans, removing some traces now", spanCount)
 		discardSuspiciousTraces(traces, maxSpans)
 	}
 
@@ -378,16 +382,26 @@ func discardSuspiciousTraces(trees map[Id]*tree, maxSpans int) {
 
 	log.Warnf("Need to discard about %d spans", spanCount-maxSpans)
 
+	var discardSpanCount int
+	var discardTraceCount int
+
 	// remove the traces with the most spans.
 	for _, trace := range traces {
 		if spanCount < maxSpans {
 			break
 		}
 
-		log.Warnf("Too many spans, discarding trace %d with %d spans", trace.id, trace.nodeCount)
 		delete(trees, trace.id)
 		spanCount -= int(trace.nodeCount)
+
+		discardSpanCount += int(trace.nodeCount)
+		discardTraceCount += 1
 	}
+
+	metricsSpansDiscarded.Mark(int64(discardSpanCount))
+	metricsTracesDiscarded.Mark(int64(discardSpanCount))
+
+	log.Warnf("Too many spans, discarded %d trace with %d spans", discardTraceCount, discardSpanCount)
 }
 
 func correctTreeTimings(tree *tree, node *proxy.Span, offset time.Duration) {
