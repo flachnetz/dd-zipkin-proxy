@@ -11,8 +11,17 @@ import (
 
 type Id = proxy.Id
 
-const bufferTime = 8 * time.Second
 const maxSpans = 100_000
+
+var bufferConfigs = []struct {
+	MaxSpans   int
+	BufferTime time.Duration
+}{
+	{MaxSpans: 0, BufferTime: 8 * time.Second},
+	{MaxSpans: 40_000, BufferTime: 6 * time.Second},
+	{MaxSpans: 60_000, BufferTime: 4 * time.Second},
+	{MaxSpans: 80_000, BufferTime: 2 * time.Second},
+}
 
 var metricsTracesFinished metrics.Meter
 var metricsTracesFinishedSize metrics.Histogram
@@ -189,7 +198,27 @@ func ErrorCorrectSpans(inputCh <-chan proxy.Span, outputCh chan<- proxy.Trace) {
 }
 
 func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- proxy.Trace) {
-	var spanCount int64
+	var spanCount int
+
+	// count the number of spans that are currently in the system.
+	for _, trace := range traces {
+		// dont count spans that are too large anyways as we'll remove them shortly
+		traceTooLarge := trace.nodeCount > 8*1024
+
+		if !traceTooLarge {
+			spanCount += int(trace.nodeCount)
+		}
+	}
+
+	// get matching buffer time
+	var bufferTime time.Duration
+	for _, config := range bufferConfigs {
+		if spanCount >= config.MaxSpans {
+			bufferTime = config.BufferTime
+		}
+	}
+
+	log.Infof("Checking for expired spans with bufferTime=%s (%d spans)", bufferTime, spanCount)
 
 	deadlineUpdate := time.Now().Add(-bufferTime)
 	deadlineStarted := time.Now().Add(-5 * bufferTime)
@@ -200,7 +229,6 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- pr
 		traceTooOld := trace.started.Before(deadlineStarted)
 
 		if !traceTooLarge && !traceTooOld && updatedRecently {
-			spanCount += int64(trace.nodeCount)
 			continue
 		}
 
@@ -257,7 +285,7 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- pr
 	}
 
 	// measure in-flight traces and spans
-	metricsSpansInflight.Update(spanCount)
+	metricsSpansInflight.Update(int64(spanCount))
 	metricsTracesInflight.Update(int64(len(traces)))
 
 	// remove largest traces if we have too many in-flight spans
