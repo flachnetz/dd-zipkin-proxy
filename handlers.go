@@ -21,9 +21,7 @@ func handleSpans(r *httprouter.Router, spans chan<- proxy.Span) {
 				err = parseSpansWithJSON(spans, req.Body, codec.ParseJsonV1)
 			})
 		} else {
-			metrics.GetOrRegisterTimer("spans.receive[type:thrift]", nil).Time(func() {
-				err = parseSpansWithThrift(spans, req.Body)
-			})
+			err = errors.New("only json spans are supported")
 		}
 
 		if rand.Float64() < 0.01 {
@@ -82,22 +80,6 @@ func handleGzipRequestBody(handle http.Handler) http.HandlerFunc {
 
 		handle.ServeHTTP(writer, req)
 	}
-}
-
-func parseSpansWithThrift(spansChannel chan<- proxy.Span, body io.Reader) error {
-	parsedSpans, err := codec.ParseThriftV1(body)
-	if err != nil {
-		return errors.WithMessage(err, "parse body as thrift")
-	}
-
-	for _, span := range parsedSpans {
-		spansChannel <- span
-	}
-
-	size := int64(len(parsedSpans))
-	metrics.GetOrRegisterMeter("spans.parsed[type:thrift]", nil).Mark(size)
-
-	return nil
 }
 
 func parseSpansWithJSON(spansChannel chan<- proxy.Span, body io.Reader, parser func(io.Reader) ([]proxy.Span, error)) error {

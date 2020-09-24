@@ -2,18 +2,13 @@ package zipkinproxy
 
 import (
 	"github.com/Shopify/sarama"
-	"github.com/flachnetz/dd-zipkin-proxy/balance"
-	"github.com/flachnetz/dd-zipkin-proxy/cache"
-	"github.com/flachnetz/dd-zipkin-proxy/datadog"
-	"github.com/flachnetz/dd-zipkin-proxy/proxy"
-	"github.com/flachnetz/dd-zipkin-proxy/zipkin"
 	"github.com/flachnetz/go-admin"
-	"github.com/flachnetz/startup"
-	"github.com/flachnetz/startup/lib/kafka"
-	. "github.com/flachnetz/startup/startup_base"
-	"github.com/flachnetz/startup/startup_http"
-	"github.com/flachnetz/startup/startup_kafka"
-	"github.com/flachnetz/startup/startup_metrics"
+	"github.com/flachnetz/startup/v2"
+	"github.com/flachnetz/startup/v2/lib/kafka"
+	. "github.com/flachnetz/startup/v2/startup_base"
+	"github.com/flachnetz/startup/v2/startup_http"
+	"github.com/flachnetz/startup/v2/startup_kafka"
+	"github.com/flachnetz/startup/v2/startup_metrics"
 	"github.com/julienschmidt/httprouter"
 	"github.com/pkg/profile"
 	"github.com/rcrowley/go-metrics"
@@ -22,6 +17,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/flachnetz/dd-zipkin-proxy/balance"
+	"github.com/flachnetz/dd-zipkin-proxy/cache"
+	"github.com/flachnetz/dd-zipkin-proxy/datadog"
+	"github.com/flachnetz/dd-zipkin-proxy/proxy"
 
 	_ "github.com/apache/thrift/lib/go/thrift"
 )
@@ -92,17 +92,6 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 		go datadog.Sink(transport, traces)
 	}
 
-	if false {
-		log.Info("Enable forwarding to a zipkin agent")
-
-		// accept zipkin trace
-		trace := make(chan proxy.Trace, 256)
-		channels = append(channels, trace)
-
-		go zipkin.Sink(trace)
-
-	}
-
 	// a channel to store the last spans that were received
 	var buffer *SpansBuffer
 	{
@@ -127,7 +116,7 @@ func MainWithRouting(routing Routing, spanConverter SpanConverter) {
 			opts.Kafka.Topic, opts.Kafka.ConsumerGroupId)
 
 		log.Debugf("Connect to kafka brokers at %s", strings.Join(opts.Kafka.Addresses, ", "))
-		client := opts.Kafka.KafkaClient()
+		client := opts.Kafka.KafkaClient("dd-zipkin-proxy")
 
 		log.Debugf("Ensure that topic %s exists", opts.Kafka.Topic)
 		topic := kafka.Topic{
