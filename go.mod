@@ -5,7 +5,6 @@ go 1.15
 require (
 	github.com/DataDog/dd-trace-go v0.6.1
 	github.com/Shopify/sarama v1.26.1
-	github.com/apache/thrift v0.13.0
 	github.com/flachnetz/go-admin v1.5.3
 	github.com/flachnetz/startup/v2 v2.1.11
 	github.com/golang/protobuf v1.4.2 // indirect

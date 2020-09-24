@@ -22,8 +22,6 @@ import (
 	"github.com/flachnetz/dd-zipkin-proxy/cache"
 	"github.com/flachnetz/dd-zipkin-proxy/datadog"
 	"github.com/flachnetz/dd-zipkin-proxy/proxy"
-
-	_ "github.com/apache/thrift/lib/go/thrift"
 )
 
 var log = logrus.WithField("prefix", "main")
