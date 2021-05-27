@@ -274,7 +274,7 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- pr
 			continue
 		}
 
-		correctTreeTimings(trace, roots[0], 0)
+		correctTreeTimings(trace, roots[0], nil, 0)
 
 		metricsTracesCorrected.Mark(1)
 
@@ -432,7 +432,7 @@ func discardSuspiciousTraces(trees map[Id]*tree, maxSpans int) {
 	log.Warnf("Too many spans, discarded %d trace with %d spans", discardTraceCount, discardSpanCount)
 }
 
-func correctTreeTimings(tree *tree, node *proxy.Span, offset time.Duration) {
+func correctTreeTimings(tree *tree, node *proxy.Span, parent *proxy.Span, offset time.Duration) {
 	if offset != 0 {
 		node.Timestamp += proxy.Timestamp(offset)
 	}
@@ -473,8 +473,17 @@ func correctTreeTimings(tree *tree, node *proxy.Span, offset time.Duration) {
 		offset += screw
 	}
 
+	if parent != nil && node.Timestamp.ToMillis() < 1577836800_000 {
+		// timestamp before 2020, this is broken. We'll just take the timestamp of the
+		// parent node to fix this here.
+		node.Timestamp = parent.Timestamp
+		if log.Level >= logrus.DebugLevel {
+			log.Debugf("Timestamp of '%s' is broken, taking timestamp from parent %s", node.Name, parent.Name)
+		}
+	}
+
 	for _, child := range tree.ChildrenOf(node.Id) {
-		correctTreeTimings(tree, child, offset)
+		correctTreeTimings(tree, child, node, offset)
 	}
 }
 

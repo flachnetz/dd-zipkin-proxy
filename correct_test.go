@@ -101,7 +101,7 @@ func TestCorrectTimings(t *testing.T) {
 		logrus.SetLevel(logrus.DebugLevel)
 		debugPrintTrace(tree)
 
-		correctTreeTimings(tree, tree.Root(), time.Duration(baseOffset))
+		correctTreeTimings(tree, tree.Root(), nil, time.Duration(baseOffset))
 
 		clientSpan := tree.GetSpan(client.Id)
 		Expect(clientSpan.Timestamp).To(BeEquivalentTo(proxy.Timestamp(baseOffset + 100*scale)))
