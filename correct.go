@@ -218,7 +218,7 @@ func finishTraces(traces map[Id]*tree, blacklist map[Id]none, outputCh chan<- pr
 		}
 	}
 
-	log.Infof("Checking for expired spans with bufferTime=%s (%d spans)", bufferTime, spanCount)
+	log.Debugf("Checking for expired spans with bufferTime=%s (%d spans)", bufferTime, spanCount)
 
 	deadlineUpdate := time.Now().Add(-bufferTime)
 	deadlineStarted := time.Now().Add(-5 * bufferTime)
